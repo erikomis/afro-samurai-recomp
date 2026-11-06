@@ -52,8 +52,11 @@ for s in $steps; do
         "$PY" "$PS3RECOMP_DIR/tools/ppu_loader.py" "$E" -o "$AFRO_ANALYSIS" ;;
     lift)
         say "lift"
+        # Jump-table case targets as extra function entries (tools/jumptables.txt).
+        "$PY" "$here/augment_functions.py" "$E" "$AFRO_ANALYSIS/EBOOT.functions.json" \
+            "$here/jumptables.txt" "$AFRO_ANALYSIS/EBOOT.functions.aug.json"
         "$PY" "$PS3RECOMP_DIR/tools/ppu_lifter.py" "$E" "${jobs[@]}" --chunks "$CHUNKS" \
-            --functions "$AFRO_ANALYSIS/EBOOT.functions.json" \
+            --functions "$AFRO_ANALYSIS/EBOOT.functions.aug.json" \
             --hle-stubs "$AFRO_ANALYSIS/EBOOT.imports.json" \
             --output "$AFRO_RECOMP" ;;
     spu)

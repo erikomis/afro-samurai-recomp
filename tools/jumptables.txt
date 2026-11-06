@@ -1,0 +1,7 @@
+# Jump tables whose case targets must be lifted as function entries
+# (tools/augment_functions.py). Hex: <r2 offset of module TOC> <module offset of table> <entries>
+#
+# func_001EA288: the engine's message dispatcher, cmplwi r3,0x105E -> 4191 cases,
+# table at [[r2-0x7EB0]-0x58E0]. New Game reached case 0x1F079C, which the lift
+# had no entry for.
+-7EB0 -58E0 105F
