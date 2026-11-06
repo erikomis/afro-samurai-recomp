@@ -1,0 +1,93 @@
+# ---------------------------------------------------------------------------
+# NOTHING FROM THE GAME, THE FIRMWARE OR SONY GOES IN THIS REPOSITORY.
+# Everything below is generated locally from the player's own disc.
+# ---------------------------------------------------------------------------
+
+# Toolkit checkouts and the Python venv
+/ps3recomp/
+/ps3recomp-afro/
+/.venv/
+
+# The disc image (a link to the player's own ISO) and its contents
+/game_iso
+*.iso
+*.ISO
+PS3_GAME/
+PS3_UPDATE/
+*.BIN
+*.bin
+*.elf
+*.ELF
+*.self
+*.SELF
+*.sprx
+*.SPRX
+*.prx
+*.PRX
+*.SFO
+*.sfo
+*.psarc
+*.PSARC
+*.pkg
+*.PKG
+*.PUP
+*.pup
+*.edat
+*.EDAT
+*.sdat
+*.SDAT
+*.SFB
+*.sfb
+*.bik
+
+# Decrypted game files, analysis and lifted output
+game/
+analysis/
+recompiled/
+build/
+cache/
+# Lifted SPU code and its workload table are derived from game code:
+# regenerate them with tools/rebuild.sh spu, never commit them.
+port/spu/
+
+# Firmware and keys
+fw/
+dev_flash/
+dev_flash*/
+*.keys
+*.KEYS
+self_keys*.txt
+*.rap
+*.RAP
+*.rif
+*.act.dat
+idps*
+act.dat
+
+# Saves, installed game data, run directories
+rpcs3/
+saves/
+gamedata/
+dev_hdd0/
+dev_hdd1/
+dev_bdvd/
+vfs/
+out/
+runs/
+*.sav
+*.SAV
+
+# Frame dumps, captures and logs
+*.ppm
+*.wav
+*.log
+*.sample
+*.trace
+*.orig
+
+# Editor / OS noise
+.DS_Store
+.vscode/
+.idea/
+__pycache__/
+*.pyc
