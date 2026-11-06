@@ -419,6 +419,56 @@ static bool alloc_guest_vm(void)
     return vm_base != nullptr;
 }
 
+/* AFRO_TEXT_RO=1 (diagnostic): make the guest's text segment read-only once
+ * the loader and HLE setup are done. Lifted code never reads instructions,
+ * but switch tables live inline in .text, and some of them read back zero
+ * mid-game ("unresolved indirect call" to a table base) while PPU_WWATCH sees
+ * no guest store. A host write (HLE memcpy, SPU DMA, file read) then faults
+ * here with a host backtrace and the guest caller. */
+#if !defined(_WIN32)
+#include <execinfo.h>
+#include <signal.h>
+extern "C" void ppu_guest_caller(char* out, size_t n);
+static uintptr_t s_ro_lo, s_ro_hi;
+static struct sigaction s_ro_prev_bus, s_ro_prev_segv;
+static void text_ro_fault(int sig, siginfo_t* si, void* uc)
+{
+    uintptr_t a = (uintptr_t)si->si_addr;
+    if (a >= s_ro_lo && a < s_ro_hi) {
+        char who[128]; ppu_guest_caller(who, sizeof who);
+        fprintf(stderr, "\n[text-ro] WRITE to guest 0x%08X (text) guest caller: %s\n",
+                (unsigned)(a - (uintptr_t)vm_base), who);
+        void* bt[48]; int n = backtrace(bt, 48);
+        backtrace_symbols_fd(bt, n, 2);
+        fflush(stderr);
+        if (getenv("AFRO_TEXT_RO_CONT")) {   /* report each writer once, keep going */
+            mprotect((void*)s_ro_lo, s_ro_hi - s_ro_lo, PROT_READ | PROT_WRITE);
+            return;
+        }
+        abort();
+    }
+    const struct sigaction& p = sig == SIGBUS ? s_ro_prev_bus : s_ro_prev_segv;
+    if ((p.sa_flags & SA_SIGINFO) && p.sa_sigaction) { p.sa_sigaction(sig, si, uc); return; }
+    signal(sig, SIG_DFL);
+}
+static void text_ro_arm(void)
+{
+    const char* e = getenv("AFRO_TEXT_RO");
+    if (!e || *e != '1') return;
+    s_ro_lo = (uintptr_t)vm_base + 0x10000u;
+    s_ro_hi = ((uintptr_t)vm_base + 0x10000u + 0x88DBC8u) & ~(uintptr_t)0x3FFF;
+    struct sigaction sa; memset(&sa, 0, sizeof sa);
+    sa.sa_sigaction = text_ro_fault; sa.sa_flags = SA_SIGINFO; sigemptyset(&sa.sa_mask);
+    sigaction(SIGBUS, &sa, &s_ro_prev_bus);
+    sigaction(SIGSEGV, &sa, &s_ro_prev_segv);
+    int rc = mprotect((void*)s_ro_lo, s_ro_hi - s_ro_lo, PROT_READ);
+    fprintf(stderr, "[text-ro] guest 0x10000..0x%08X read-only (rc=%d)\n",
+            (unsigned)(s_ro_hi - (uintptr_t)vm_base), rc);
+}
+#else
+static void text_ro_arm(void) {}
+#endif
+
 /* ---------------------------------------------------------------------------
  * Main
  * -----------------------------------------------------------------------*/
@@ -527,6 +577,7 @@ int main(int argc, char** argv)
     ppu_sysprx_register();   /* boot-critical CRT */
     ppu_fs_register();       /* cellFs over the game directory */
     lv2_init_syscalls();     /* the lv2 syscall table */
+    text_ro_arm();           /* AFRO_TEXT_RO=1 diagnostic */
 
     /* Install the guest-callback hook, then start the frame clock. It no-ops
      * until the title registers its vblank and flip handlers during init. */
