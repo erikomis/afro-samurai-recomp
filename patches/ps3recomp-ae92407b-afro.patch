@@ -31,10 +31,130 @@ index 49e13905..24f12d08 100644
  s32 cellKbSetReadMode(u32 port_no, u32 rmode);
  s32 cellKbSetCodeType(u32 port_no, u32 codetype);
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index b09220e2..c97b9c71 100644
+index b09220e2..4e80c80b 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
-@@ -3766,6 +3766,76 @@ s32 _cellSpursLFQueueInitialize(u64 owner_ea, u64 queue_ea, u64 buffer_ea,
+@@ -2890,11 +2890,30 @@ s32 cellSpursJobGuardReset(u64 guard_ea)
+  * chain then gives up this pass rather than spinning the walker thread
+  * forever). An unknown guard opens immediately -- a chain guarded by something
+  * we never saw initialised must not deadlock the walker. */
+-static int jg_wait(u32 ea)
++/* SPURS_JG_WAIT_FOREVER=1: a closed guard holds the walker until it opens, as
++ * on hardware, for as long as the chain runs (Shutdown clears `running`, which
++ * still ends the wait). The 20 s give-up ended Afro Samurai's skinning chain at
++ * boot -- its guard first opens when a game starts, minutes later -- so New
++ * Game notified a chain nobody walked, no job-done event came, and the render
++ * thread waited on its event queue for good. Off by default: titles were
++ * tuned against the give-up. */
++static int jg_wait_forever(void)
++{
++    static int on = -1;
++    if (on < 0) { const char* e = getenv("SPURS_JG_WAIT_FOREVER"); on = (e && e[0] == '1') ? 1 : 0; }
++    return on;
++}
++
++static int jg_wait(u32 ea, u32 jc_ea)
+ {
+     int i = jg_find(ea);
+     if (i < 0) return 1;
+-    for (int spin = 0; spin < 20000; spin++) {     /* ~20 s at 1 ms */
++    const int forever = jg_wait_forever();
++    int slot = -1;
++    for (int c = 0; c < MAX_JOBCHAINS; c++)
++        if (s_jobchains[c].jc_ea == jc_ea) { slot = c; break; }
++    for (int spin = 0; forever || spin < 20000; spin++) {     /* ~20 s at 1 ms */
++        if (forever && (slot < 0 || !s_jobchains[slot].running)) return 0;   /* shut down */
+         if (s_jobguards[i].pending >= s_jobguards[i].reset) {
+             /* Consume exactly one release worth of credits, so notifies that
+              * arrived during the previous lap still count. */
+@@ -2947,6 +2966,23 @@ static u64 spurs_event_data3_probe(void)
+ 
+ static void jc_signal_done(u32 jc_ea, int job_index)
+ {
++    /* SPURS_JC_EVENT_FROM_JOB=1: deliver only the events the jobs themselves
++     * send. On hardware a chain posts nothing of its own; a job that wants the
++     * PPU to know writes its event through SPU_WrOutIntrMbox (bit 0x40000000 =
++     * send-event, port in the top byte), as sys_spu_thread_send_event does.
++     * Afro Samurai's skinning ring ends each lap with a 112-byte job doing just
++     * that, and its render thread waits for exactly one event per lap on a
++     * queue of depth 1. A synthetic event per job filled that queue, the real
++     * one was dropped (rc=-1), and render waited for it while the chain waited
++     * on its guard for the render thread: a frozen game after New Game. */
++    { static int s_from_job = -1;
++      if (s_from_job < 0) { const char* e = getenv("SPURS_JC_EVENT_FROM_JOB"); s_from_job = (e && e[0] == '1') ? 1 : 0; }
++      if (s_from_job) {
++          if (job_index < 0 || !g_spurs_job_mbox_valid || !(g_spurs_job_mbox_intr & 0x40000000u)) {
++              if (job_index >= 0) g_spurs_job_mbox_valid = 0;   /* consumed: nothing to send */
++              return;
++          }
++      } }
+     /* Carry the job's mailbox answer in the completion event. On hardware the
+      * SPU's outbound/interrupt mailbox is what the SPURS event delivers; a
+      * synthetic payload means the caller reads back zero for whatever it
+@@ -3013,7 +3049,23 @@ static void jc_execute(u32 entry_ea, u32 jc_ea, u32 size_desc)
+      * count that instead and reset it whenever real work happens. */
+     int idle = 0;
+     for (;; idle++) {
+-        if (idle > 4096) break;
++        if (idle > 4096) {
++            /* SPURS_JG_WAIT_FOREVER: a chain spinning between jobs is waiting
++             * for the PPU to write its next work (Afro Samurai's skinning chain
++             * after a frame's jobs), as the SPU keeps polling on hardware. Keep
++             * walking, a little slower, for as long as the chain runs. */
++            if (!jg_wait_forever()) break;
++            int slot = -1;
++            for (int c = 0; c < MAX_JOBCHAINS; c++)
++                if (s_jobchains[c].jc_ea == jc_ea) { slot = c; break; }
++            if (slot < 0 || !s_jobchains[slot].running) return;
++#ifdef _WIN32
++            Sleep(1);
++#else
++            usleep(200);
++#endif
++            idle = 0;
++        }
+         u64 cmd = vm_read64(pc);
+         u32 op  = (u32)(cmd & 7);
+         u32 ext = (u32)(cmd & 127);
+@@ -3036,8 +3088,27 @@ static void jc_execute(u32 entry_ea, u32 jc_ea, u32 size_desc)
+         if (op == 4) { ret_pc = pc + 8; pc = (u32)(cmd & ~7ull); continue; }  /* CALL */
+         if (op == 7) {
+             if (ext == (7 | (15 << 3))) {                     /* END */
+-                printf("[cellSpurs] chain 0x%08X: END after %d job(s)\n", jc_ea, jobs);
++                { static int _n = 0; if (PS3_LOG_FIRST(_n, 8))
++                    printf("[cellSpurs] chain 0x%08X: END after %d job(s)\n", jc_ea, jobs); }
+                 if (jobs) jc_signal_done(jc_ea, jobs - 1);
++                /* SPURS_JG_WAIT_FOREVER: a ring chain kicked once (Afro
++                 * Samurai's skinning chain) only shows END while the PPU is
++                 * appending the next frame's work over it; the walker leaving
++                 * there left the chain with no walker for good. Wait for the
++                 * word to change and go on from it, while the chain runs. */
++                if (jg_wait_forever()) {
++                    int slot = -1;
++                    for (int c = 0; c < MAX_JOBCHAINS; c++)
++                        if (s_jobchains[c].jc_ea == jc_ea) { slot = c; break; }
++                    while (slot >= 0 && s_jobchains[slot].running && vm_read64(pc) == cmd) {
++#ifdef _WIN32
++                        Sleep(1);
++#else
++                        usleep(200);
++#endif
++                    }
++                    if (slot >= 0 && s_jobchains[slot].running) { jobs = 0; idle = 0; continue; }
++                }
+                 return;
+             }
+             if (ext == (7 | (14 << 3))) {                     /* RET */
+@@ -3051,7 +3122,7 @@ static void jc_execute(u32 entry_ea, u32 jc_ea, u32 size_desc)
+         }
+         if (op == 7 && ext == (7 | (1 << 3))) {           /* GUARD */
+             u32 g_ea = (u32)(cmd & ~127ull);
+-            if (!jg_wait(g_ea)) return;                  /* still closed */
++            if (!jg_wait(g_ea, jc_ea)) return;           /* still closed */
+             pc += 8; continue;
+         }
+         /* NOP(0) / SYNC+LWSYNC(2, one virtual SPU: nothing to wait for) /
+@@ -3766,6 +3837,76 @@ s32 _cellSpursLFQueueInitialize(u64 owner_ea, u64 queue_ea, u64 buffer_ea,
      return CELL_OK;
  }
  
@@ -506,7 +626,7 @@ index 37e37454..dcd4a947 100644
        else fprintf(stderr, "[fs] open '%s' -> fd %d\n", gpath, fd); }
      if (ps3_env_once("PS3_FSLOG_BT") && strstr(gpath, ".usm")) {
 diff --git a/runtime/ppu/ppu_loader.cpp b/runtime/ppu/ppu_loader.cpp
-index ea7de18a..b934c411 100644
+index ea7de18a..15350a44 100644
 --- a/runtime/ppu/ppu_loader.cpp
 +++ b/runtime/ppu/ppu_loader.cpp
 @@ -3334,6 +3334,17 @@ extern "C" void lv2_syscall(ppu_context* ctx)
@@ -527,6 +647,29 @@ index ea7de18a..b934c411 100644
          uint32_t size = ps3_mmapper_block_size(mem_id);
          if (!size) size = 0x100000u;
          uint32_t va = 0;
+@@ -3545,6 +3556,8 @@ extern "C" void lv2_syscall(ppu_context* ctx)
+     }
+ }
+ 
++extern "C" { uint32_t g_ps3_ro_image_lo, g_ps3_ro_image_hi; }
++
+ /* ---------------------------------------------------------------------------
+  * Minimal big-endian ELF64 loader: copies PT_LOAD segments into vm_base at
+  * their vaddrs and zero-fills BSS (memsz > filesz). Returns e_entry (an OPD
+@@ -3653,6 +3666,13 @@ extern "C" uint32_t ppu_load_elf(const char* path)
+         if (p_memsz > p_filesz)
+             memset(vm_base + (uint32_t)p_vaddr + (uint32_t)p_filesz, 0, (size_t)(p_memsz - p_filesz));
+         g_ppu_image_ranges.push_back({p_vaddr, p_vaddr + (p_memsz > p_filesz ? p_memsz : p_filesz)});
++        /* Non-writable segment (text + rodata, incl. inline switch tables):
++         * lv2 maps it read-only, so an SPU DMA PUT into it faults on hardware
++         * instead of landing. Remember it for the MFC (spu_dma.h). */
++        if (!(be32(ph + 4) & 2u /*PF_W*/) && !g_ps3_ro_image_hi) {
++            g_ps3_ro_image_lo = (uint32_t)p_vaddr;
++            g_ps3_ro_image_hi = (uint32_t)(p_vaddr + p_memsz);
++        }
+         loaded++;
+     }
+     free(file);
 diff --git a/runtime/ppu/ppu_sysprx.cpp b/runtime/ppu/ppu_sysprx.cpp
 index fd2c2078..bbbf251e 100644
 --- a/runtime/ppu/ppu_sysprx.cpp
@@ -896,6 +1039,31 @@ index 84b7ac96..bb41b153 100644
              spu_ef_deliver_owed(ctx, wobj);
          }
          ctx->gpr[3]._u32[0] = 0;
+diff --git a/runtime/spu/spu_dma.h b/runtime/spu/spu_dma.h
+index 8c4ccaa8..108e2694 100644
+--- a/runtime/spu/spu_dma.h
++++ b/runtime/spu/spu_dma.h
+@@ -30,6 +30,8 @@ extern "C" {
+ #endif
+ 
+ extern uint8_t* vm_base;
++/* Read-only PT_LOAD of the main ELF (ppu_loader.cpp); 0/0 before load. */
++extern uint32_t g_ps3_ro_image_lo, g_ps3_ro_image_hi;
+ 
+ /* Guard against a guest DMA whose effective address lands in reserved-but-
+  * uncommitted guest memory (the 4 GB VM is MEM_RESERVE; only main mem / RSX /
+@@ -265,7 +267,10 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
+           int malformed = (size == 0) || (size > 0x4000)
+                        || (size >= 16 && (size & 15))
+                        || (((lsa ^ (uint32_t)ea) & 15) != 0)
+-                       || (mfc_is_put(cmd) && (uint32_t)ea < 0x10000u);
++                       || (mfc_is_put(cmd) && (uint32_t)ea < 0x10000u)
++                       || (mfc_is_put(cmd) && g_ps3_ro_image_hi &&
++                           (uint32_t)ea < g_ps3_ro_image_hi &&
++                           (uint32_t)ea + size > g_ps3_ro_image_lo);
+           if (malformed) {
+               static int _n = 0;
+               if (PS3_LOG_FIRST(_n, 8))
 diff --git a/runtime/spu/spu_workload.c b/runtime/spu/spu_workload.c
 index f922b745..803212b6 100644
 --- a/runtime/spu/spu_workload.c
@@ -922,6 +1090,48 @@ index f922b745..803212b6 100644
  /* Wake only the task parked on `wait_obj` (0 = any task of the taskset).
   * The guest names its wait object in the WAIT_SIGNAL argument, and for YDKJ`s
   * CRI tasks the flag the PPU sets is exactly wait_obj + 0x80 -- so a Set can
+diff --git a/runtime/spu/spurs_job.c b/runtime/spu/spurs_job.c
+index 9beb8932..bc53ef26 100644
+--- a/runtime/spu/spurs_job.c
++++ b/runtime/spu/spurs_job.c
+@@ -241,7 +241,8 @@ int spu_run_spurs_job(spu_lifted_entry_fn entry, int image_id,
+      * jm2 keeps these in its own bss (outside job memory); we load the job at
+      * LS 0, so the top of LS is the equivalent free space. */
+     uint32_t desc_ls = SPU_LS_SIZE - 0x400;     /* descriptors are <= 1024 B */
+-    uint32_t ctx_ls  = desc_ls - 0x40;          /* CellSpursJobContext2, 48 B */
++    /* 0x80 bytes: room for the older context layout below (SPURS_JOB_CTX_V1). */
++    uint32_t ctx_ls  = desc_ls - 0x80;          /* CellSpursJobContext2, 48 B */
+     uint32_t dsz     = job_desc_size ? job_desc_size : 256u;
+     if (dsz > 0x400) dsz = 0x400;
+     if (p > ctx_ls)
+@@ -284,6 +285,27 @@ int spu_run_spurs_job(spu_lifted_entry_fn entry, int image_id,
+     ls32(ls, ctx_ls + JC_DMA_TAG,  JOB_DMA_TAG);
+     ls32(ls, ctx_ls + JC_EA_JOB_DESCRIPTOR,     0);
+     ls32(ls, ctx_ls + JC_EA_JOB_DESCRIPTOR + 4, job_ea);
++    /* SPURS_JOB_CTX_V1=1: also fill the fields an older job crt reads past the
++     * 48-byte Context2. Afro Samurai's skinning job (8B2B4776E3A079D8) treats
++     * the context as 26 buffer pointers (inputs, then cache buffers) followed
++     * by u16 numIoBuffer at +0x68, u16 numCacheBuffer at +0x6A and the u32
++     * dmaTag at +0x74, and halts on its own guard (tag <= 31, aligned LSA/EA)
++     * when they are wrong. With them unset those reads landed in the parked
++     * descriptor: tag = an EA, so every run halted at 0x1D4, and the odd run
++     * whose garbage passed the guard PUT its whole local store to EA 0,
++     * overwriting the PPU text (and the switch tables in it) from 0x10000.
++     * The pointer array matches Context2 for one input buffer (ioBuffer at
++     * +0, cacheBuffer[i] at +4+4i); only more inputs would need per-entry
++     * pointers, which no job seen so far uses. */
++    if (ps3_env_once("SPURS_JOB_CTX_V1")) {
++        ls16(ls, ctx_ls + 0x68, (uint16_t)n_dma);
++        ls16(ls, ctx_ls + 0x6A, (uint16_t)n_cache);
++        ls32(ls, ctx_ls + 0x6C, out_ls);
++        ls32(ls, ctx_ls + 0x70, s_ls);
++        ls32(ls, ctx_ls + 0x74, JOB_DMA_TAG);
++        ls32(ls, ctx_ls + 0x78, 0);
++        ls32(ls, ctx_ls + 0x7C, job_ea);
++    }
+ 
+     { static int _n = 0;
+       if (PS3_LOG_FIRST(_n, 4))
 diff --git a/runtime/syscalls/sys_fs.c b/runtime/syscalls/sys_fs.c
 index e435555a..7024739b 100644
 --- a/runtime/syscalls/sys_fs.c

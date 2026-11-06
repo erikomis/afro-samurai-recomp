@@ -510,6 +510,19 @@ static void afro_defaults(void)
      *     is how it learns to create one. ERROR_NODATA made it show "save data
      *     appears to be damaged" and stop. */
     setenv("SAVEDATA_CBRESULT_STRICT", "1", 0);
+    /* SPURS_JG_WAIT_FOREVER  the skinning job chain is kicked at boot and sits
+     *     on its guard until a game starts; the 20 s give-up ended it, and New
+     *     Game then waited for a job-done event from a chain nobody walked. */
+    setenv("SPURS_JG_WAIT_FOREVER", "1", 0);
+    /* SPURS_JC_EVENT_FROM_JOB  the skinning ring's last job sends the one
+     *     event per lap the render thread waits for (depth-1 queue); synthetic
+     *     per-job events filled the queue and the real one was dropped. */
+    setenv("SPURS_JC_EVENT_FROM_JOB", "1", 0);
+    /* SPURS_JOB_CTX_V1  the skinning job reads numIoBuffer/numCacheBuffer at
+     *     ctx+0x68/0x6A and the DMA tag at ctx+0x74 (older context layout);
+     *     without them it halted on its guard every run, and a run whose
+     *     garbage passed PUT its local store over the PPU text at 0x10000. */
+    setenv("SPURS_JOB_CTX_V1", "1", 0);
 }
 
 int main(int argc, char** argv)
