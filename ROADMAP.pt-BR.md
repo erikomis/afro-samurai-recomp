@@ -1,0 +1,198 @@
+# Roadmap
+
+🌐 [English](ROADMAP.md) · **Português (BR)**
+
+Estado do port nativo do Afro Samurai (`BLUS30264`) para macOS/arm64 e o que
+vem a seguir. Mesma organização dos roadmaps do inFAMOUS 2 e dos Resistance.
+`[x]` = feito e verificado; `[ ]` = a fazer; "(em andamento)" = sendo feito.
+
+## Resumo (06/11/2026)
+
+- **Dá boot até uma tela preta:** heaps e construtores estáticos → SPURS (5
+  SPUs) e as threads do jogo → o save carregado → áudio FMOD Ex ligado → o
+  vídeo do logo da Bandai Namco (`bng.bik`) aberto → uns 54 quadros por
+  segundo, 10 draws cada, todos pretos. Um teste headless de 80 segundos
+  termina com o jogo ainda apresentando quadros: sem crash, sem travar.
+- **Nada visto na tela ainda:** nem logo, nem menu, nem gameplay.
+- **Toolkit:** ps3recomp v0.19.0 do upstream (`ae92407b`) mais as mudanças
+  genéricas deste port, controladas por variáveis de ambiente, num patch só
+  (`patches/ps3recomp-ae92407b-afro.patch`).
+
+## Feito
+
+- [x] O disco inventariado ([`docs/game-manifest.md`](docs/game-manifest.md)):
+  `BLUS30264` v01.00, sem atualização do jogo, o motor (o NTG da Namco
+  Bandai, não a UE3), o middleware (Bink, FMOD Ex, NavPower, EDGE), 156
+  imports de 12 bibliotecas de firmware, 20 imagens SPU embutidas, nenhum PRX
+  próprio.
+- [x] `EBOOT.BIN` descriptografado sem o RPCS3 (`tools/decrypt_self.py`, um
+  SELF de disco com `key_rev 0x0001`).
+- [x] EBOOT analisado e traduzido (12.869 funções OPD, 32.951 emitidas, 16
+  unidades de tradução); compila e linka no macOS/arm64 com Metal.
+- [x] Os 20 ELFs SPU embutidos traduzidos (`tools/lift_spu.sh`): EDGE ZLIB,
+  o mixer SPURS do FMOD Ex e 18 plugins de codec/DSP do FMOD.
+- [x] Os scripts: `rebuild.sh`, `build.sh` com proteção de memória e disco
+  (dois kernel panics por builds sem controle em 01/11/2026), `run.sh` com a
+  ISO montada só para leitura e as pastas de HDD dentro do repositório,
+  `probe.sh` para testes headless com dumps de quadro e botões por script.
+- [x] `sys_mempool` implementado (`try_allocate` / `allocate` / `free` /
+  `destroy`, contagens em big-endian, handles marcados com geração): o jogo
+  cria uns 3.800 pools em dois minutos.
+- [x] O mapeador de memória com controle (`PS3_MMAPPER_TRACK=1`): mapa de
+  dono por página, map / unmap / free de verdade e next-fit por reserva; o
+  cursor não sobrepõe mais as páginas de heap do jogo e os pools dele (o
+  `memset` por cima de nós de lista vivos, depois o `abort()`).
+- [x] Seis reservas de endereço em ordem crescente, 512 MB + 5 × 256 MB
+  (`PS3_MAPPER_WIDE=1`): duas voltavam `ENOMEM`, e o jogo decide o `free()`
+  pela faixa de reserva.
+- [x] Os overlays de plugin SPU do FMOD rodam interpretados onde não há corpo
+  traduzido (`SPU_INTERP_UNLIFTED`): a thread de eventos não espera mais para
+  sempre pelo mixer segurando o lwmutex de que a thread principal precisa.
+- [x] Primeiro save: um resultado negativo do callback de stat responde
+  `ERROR_CBRESULT`, como o firmware (`SAVEDATA_CBRESULT_STRICT=1`); a parada
+  do "os dados salvos parecem estar danificados" acabou, e o `AFRO_0.SAV` é
+  gravado e lido de volta.
+- [x] `cellKbRead` (NID `0xFF0A21B7`) respondido pelo `cellKbGetData`; o jogo
+  não lê mais lixo da pilha como eventos de tecla.
+- [x] `_cellSpursLFQueuePushBody` sobre a linha canônica da
+  `CellSyncLFQueue`, e o despertar perdido da fila LF no `WAIT_SIGNAL` (os dois
+  da árvore do Resistance 2).
+- [x] Passou da antiga leitura de nulo na thread principal em
+  `func_002D13B8` (o registro global em `[r30-0x7FA0]+4`): o boot agora segue
+  para o carregador de terreno, o worker de save, o áudio e o vídeo do logo.
+- [x] O trace temporário `[afro-memset]` retirado do código traduzido.
+
+## Próximos passos: uma imagem na tela
+
+### Bloqueios
+
+- [ ] (em andamento) **Quadros pretos.** O jogo desenha (10 draws em 11
+  superfícies por quadro) e faz flip a uns 54 Hz, e todos os quadros saem
+  pretos. Descobrir onde a imagem se perde: os quadros do Bink não
+  decodificados (as threads "Bink Audio" e "Bink IO", o decodificador na PPU
+  ou na SPU), não enviados para a textura que o jogo desenha, ou desenhados e
+  perdidos no backend Metal (formatos de superfície, o alvo de saída, o
+  buffer de display que o flip indica).
+- [ ] O vídeo do logo tocado até o fim, e o jogo seguindo dele para a
+  próxima tela.
+- [ ] O job de skinning em SPU (`spu_skinning`): achá-lo em bytes crus no
+  EBOOT ou no `ps3.psarc` (não está entre os 20 ELFs), recortar e traduzir,
+  como os programas SPU crus do Resistance 2.
+
+### Até os menus
+
+- [ ] As telas legais e dos estúdios, a tela de título e o menu principal,
+  renderizados corretamente.
+- [ ] Entrada: um controle pelo pad SDL do toolkit, depois teclado e mouse;
+  confirmar que o `PAD_SCRIPT` chega ao jogo.
+- [ ] Som e música dos menus (FMOD no SPURS), em sincronia com os vídeos.
+
+### Até a primeira luta
+
+- [ ] New Game → a cutscene de abertura → a primeira fase, controlável.
+- [ ] O visual cel-shaded e os contornos conferidos com o PS3: shaders,
+  blending, depth/stencil, render targets.
+- [ ] Streaming do `ps3.psarc` com o EDGE ZLIB nos SPUs, sem engasgos.
+
+## O que falta para ficar 100% jogável
+
+### Gameplay
+
+- [ ] A história inteira jogada, fase por fase: chefes, QTEs, mortes,
+  checkpoints, o final.
+- [ ] Saves entre sessões (checkpoint, sair, Continuar).
+
+### Gráficos
+
+- [ ] Cada bug de renderização encontrado jogando corrigido, cada um
+  comparado com uma captura do PS3 na mesma cena.
+
+### Desempenho
+
+- [ ] 30 fps estáveis com frame pacing regular (o alvo do jogo no PS3),
+  medidos com tempos de quadro p95/p99; perfilar CPU, SPU, GPU, compilação de
+  shaders e streaming.
+- [ ] O cache de tradução de shaders e a compilação de pipelines em segundo
+  plano dos outros ports, para shaders vistos pela primeira vez não
+  engasgarem.
+
+### Estabilidade
+
+- [ ] Sessões longas sem travar e sem vazamento (o jogo cria e destrói
+  milhares de mempools; vigiar se o mapeador com controle não fica sem
+  espaço).
+- [ ] Um encerramento limpo.
+
+### Rebuild
+
+- [x] As mudanças do toolkit exportadas como um patch só,
+  `patches/ps3recomp-ae92407b-afro.patch` (conferido que aplica num
+  `ae92407b` limpo).
+- [ ] Um `tools/setup_toolkit.sh` que clona a v0.19.0 e aplica o patch, e um
+  `tools/export_toolkit_patch.sh` que transforma uma pasta do toolkit de volta
+  no patch.
+- [ ] Independente: o próprio buscador de chaves e o próprio venv de Python,
+  em vez dos do port do Deadpool.
+
+## Depois de jogável (melhorias)
+
+As ideias da Enhanced Edition do
+[`afro_samurai_ps3_recomp_enhanced.md`](afro_samurai_ps3_recomp_enhanced.md),
+cada uma como opção, com o comportamento original mantido como padrão. Cada
+crítica das análises de 2009 precisa ser reproduzida neste build primeiro:
+bug do port e bug do jogo original são coisas diferentes.
+
+### Gráficos e resolução
+
+- [ ] Resolução interna: 1080p e 1440p primeiro, 4K só se o desempenho
+  permitir.
+- [ ] SMAA / FXAA, filtragem anisotrópica e nitidez, sem estragar o cel
+  shading e os contornos.
+- [ ] Ultrawide, se a câmera e o HUD permitirem.
+
+### Taxa de quadros
+
+- [ ] 60 fps como modo experimental, só depois de mapear o que depende da
+  taxa de quadros (física, animação, scripts, temporizadores, QTEs, a
+  câmera).
+
+### Câmera e controles
+
+- [ ] Uma câmera melhor: distância, colisão, sem perder o Afro atrás da
+  geometria.
+- [ ] Inversão X/Y independente e sensibilidade; deadzones e remapeamento
+  para DualSense, DualShock 4 e Xbox.
+- [ ] Resposta de pulo e movimento (buffer de entrada, tolerâncias).
+
+### Design do jogo (opcional)
+
+- [ ] Checkpoints extras que restaurem vida, inimigos, scripts e flags sem
+  softlocks.
+- [ ] Um balanceamento opcional dos chefes (avisos de ataque, dano, timing).
+- [ ] Uma lista de golpes e feedback de combos; cutscenes puláveis onde o
+  estado depois delas for seguro de montar.
+
+### App para instalar e jogar (launcher)
+
+- [ ] O launcher de desktop dos ports do Resistance: instalação em um clique
+  a partir do disco, configurações, saves, jogar sem terminal.
+
+### Outras plataformas
+
+- [ ] Windows e Linux, depois que o macOS estiver jogável.
+
+### Fora do escopo por enquanto
+
+- Recursos online, troféus, e pacotes de texturas ou assets que dependam de
+  conteúdo de terceiros.
+
+## Devolvendo ao upstream
+
+- [ ] Mandar as correções genéricas do toolkit para o
+  [sp00nznet/ps3recomp](https://github.com/sp00nznet/ps3recomp), cada uma com
+  um teste: `sys_mempool`, o mapeador com controle e as reservas em ordem
+  crescente, `ERROR_CBRESULT` para um callback de stat negativo, `cellKbRead`.
+- [x] O próprio repositório git (`afro-samurai-recomp`): os fontes do port, o
+  patch do toolkit, README, a licença e um `.gitignore` que bloqueia dados do
+  jogo, firmware, chaves e saves.
+- [ ] `CREDITS.md`, e o repositório publicado no GitHub.
