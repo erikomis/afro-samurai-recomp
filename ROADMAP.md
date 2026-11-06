@@ -8,12 +8,13 @@ comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
 
 ## Status at a glance (2026-11-06)
 
-- **Boots to a black screen:** heaps and static constructors → SPURS (5
+- **Main menu and New Game:** heaps and static constructors → SPURS (5
   SPUs) and the game's threads → the save loaded → FMOD Ex audio up → the
-  Bandai Namco logo movie (`bng.bik`) opened → about 54 frames a second, 10
-  draws each, all black. A headless 80-second run ends with the game still
-  presenting: no crash, no hang.
-- **Nothing seen on screen yet:** no logo, no menu, no gameplay.
+  logo and credit movies → the main menu over its background movie → New
+  Game → the 3D loading screen → black frames. Four 240-second headless runs
+  with scripted buttons in a row get there, with no crash.
+- **No gameplay seen yet:** the screen turns black after the loading
+  screen.
 - **Toolkit:** upstream ps3recomp v0.19.0 (`ae92407b`) plus this port's
   generic, env-gated changes, as one patch
   (`patches/ps3recomp-ae92407b-afro.patch`).
@@ -59,29 +60,46 @@ comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
   registry at `[r30-0x7FA0]+4`): the boot now goes on to the terrain loader,
   the save worker, audio and the logo movie.
 - [x] The temporary `[afro-memset]` trace taken back out of the lifted code.
+- [x] The black frames at boot: the movies open. Bink reads the `cellFs`
+  descriptor the game hands it with the raw lv2 syscalls; lv2 read, lseek and
+  fstat now fall back to the `cellFs` table.
+- [x] The logo and credit movies (`bng.bik`, `two_headbands.bik`,
+  `afro_credit.bik`) and the main menu over `background_movie.bik`.
+- [x] `PAD_SCRIPT` reaches the game: START through the title, CROSS through
+  the menu to New Game.
+- [x] The SPU skinning chain: its job binaries dumped (`SPU_DUMP_MISS`) and
+  lifted (`tools/lift_jobs.sh`); the walker waits on a closed guard instead
+  of giving up after 20 s (`SPURS_JG_WAIT_FOREVER`); only the jobs' own
+  events posted (`SPURS_JC_EVENT_FROM_JOB`, the depth-1 queue the render
+  thread waits on); the older job-context fields the job reads
+  (`SPURS_JOB_CTX_V1`, the halt on its guard and the PUT over the game's
+  code); DMA PUTs into the read-only segment dropped.
+- [x] The `AFRO_TEXT_RO=1` diagnostic: the game's code read-only after load,
+  so a host write into it stops with its caller (it caught the skinning job's
+  PUT).
+- [x] Jump-table case targets lifted as functions (`tools/augment_functions.py`,
+  `tools/jumptables.txt`): the message dispatcher's lost case `0x1F079C` and
+  New Game spinning on a NULL; no "unresolved indirect call" in four runs.
+- [x] New Game reaches the 3D loading screen.
 
-## Next: a picture on screen
+## Next: into the first fight
 
 ### Blockers
 
-- [ ] (in progress) **Black frames.** The game draws (10 draws into 11
-  surfaces a frame) and flips at about 54 Hz, and every frame is black. Find
-  where the picture is lost: the Bink frames not decoded (the "Bink Audio" and
-  "Bink IO" threads, the decoder on PPU or SPU), not uploaded to the texture
-  the game draws, or drawn and lost in the Metal backend (surface formats,
-  the output target, the display buffer the flip names).
-- [ ] The logo movie played to its end, and the game going on from it to the
-  next screen.
-- [ ] The SPU skinning job (`spu_skinning`): find it as raw bytes in the EBOOT
-  or in `ps3.psarc` (it is not among the 20 ELFs), cut it out and lift it, as
-  Resistance 2's raw SPU programs.
+- [ ] (in progress) **Black after the loading screen.** New Game shows the
+  3D "Loading..." screen and then black frames; find what the game waits on
+  or draws there.
+- [ ] Watch the logs for more "unresolved indirect call" targets and add
+  their tables to `tools/jumptables.txt` (or let the scan find them).
+- [ ] The skinning jobs cut out of the EBOOT or `ps3.psarc` at rebuild time,
+  so a first build does not need a run into New Game to capture them.
 
-### Into the menus
+### The menus, for real
 
-- [ ] The legal and studio screens, the title screen and the main menu,
-  rendered correctly.
+- [ ] The legal and studio screens, the title screen and the menus checked
+  against the PS3 (every option, Treasures).
 - [ ] Input: a controller through the toolkit's SDL pad, then keyboard and
-  mouse; check `PAD_SCRIPT` reaches the game.
+  mouse.
 - [ ] Menu sound and music (FMOD on SPURS), in sync with the movies.
 
 ### Into the first fight
@@ -183,7 +201,12 @@ a port bug and a bug of the original game are different things.
 - [ ] Send the generic toolkit fixes upstream to
   [sp00nznet/ps3recomp](https://github.com/sp00nznet/ps3recomp), each with a
   test: `sys_mempool`, the tracked mapper and the ascending reservations,
-  `ERROR_CBRESULT` for a negative stat callback, `cellKbRead`.
+  `ERROR_CBRESULT` for a negative stat callback, `cellKbRead`, lv2 read /
+  lseek / fstat on a `cellFs` descriptor, the job-chain walker's guard wait
+  and job-sent events, the older job-context fields, DMA PUTs into the
+  read-only segment dropped.
+- [ ] The jump-table case split (`augment_functions.py`) as a lifter option
+  upstream, so every port gets it.
 - [x] Its own git repository (`afro-samurai-recomp`): the port sources, the
   toolkit patch, README, the license and a `.gitignore` that blocks game
   data, firmware, keys and saves.

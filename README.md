@@ -7,13 +7,17 @@ A native port of **Afro Samurai** (PS3, disc `BLUS30264`, v01.00) to
 code is translated to C/C++ and compiled into a native executable, with
 graphics on Metal. It is not an emulator.
 
-**It boots, but the screen stays black.** The game gets through its start-up
-(memory heaps, SPURS with 5 SPUs, the file and render threads, the terrain
-loader), loads its save, starts the audio (FMOD Ex on SPURS) and opens the
-Bandai Namco logo movie (`bng.bik`). From there it presents frames steadily,
-about 54 a second with 10 draws each, for as long as it is left running, but
-every frame is black. Nothing past that point has been seen yet; see
-[Status](#status).
+**It reaches the main menu and, from New Game, the loading screen.** The
+game gets through its start-up (memory heaps, SPURS with 5 SPUs, the file and
+render threads, the terrain loader), loads its save, starts the audio (FMOD
+Ex on SPURS), plays the logo and credit movies and shows the main menu
+(Continue, New Game, Options, Treasures) over its background movie. New Game
+goes on to the 3D "Loading..." screen; after it the screen turns black, and
+nothing past that has been seen yet. See [Status](#status).
+
+| | |
+| --- | --- |
+| [<img src="docs/screenshots/01-main-menu.png" width="420" alt="Main menu: Continue, New Game, Options, Treasures">](docs/screenshots/01-main-menu.png)<br>The main menu | [<img src="docs/screenshots/02-loading.png" width="420" alt="The 3D loading screen after New Game">](docs/screenshots/02-loading.png)<br>New Game: the loading screen |
 
 Built on [ps3recomp](https://github.com/sp00nznet/ps3recomp), with the layout
 and the tools of the author's other ports
@@ -22,10 +26,10 @@ and the tools of the author's other ports
 [Resistance 2](https://github.com/erikomis/resistance2-recomp)).
 
 > [!WARNING]
-> **Very early work in progress.** It does not show a picture yet, let
-> alone a menu or gameplay. There are no releases: you build the game yourself
-> from your own disc. Apple-silicon macOS only. What is missing is in
-> [ROADMAP.md](ROADMAP.md).
+> **Very early work in progress.** The menus show, but there is no gameplay
+> yet: New Game stops at a black screen after the loading screen. There are no
+> releases: you build the game yourself from your own disc. Apple-silicon
+> macOS only. What is missing is in [ROADMAP.md](ROADMAP.md).
 
 > **This repository contains no game data, no firmware, no Sony keys and
 > nothing translated from them.** Everyone generates all of that locally from
@@ -35,9 +39,12 @@ and the tools of the author's other ports
 ## Status
 
 As of 2026-11-06: boot → heaps and static constructors → SPURS and the
-game's threads → the save is loaded → audio up → the logo movie is opened →
-a steady stream of black frames. A headless 80-second run ends with the game
-still presenting; no crash and no hang.
+game's threads → the save is loaded → audio up → the logo and credit movies
+(`bng.bik`, `two_headbands.bik`, `afro_credit.bik`) → the main menu over
+`background_movie.bik` → New Game → the 3D loading screen → black frames.
+Headless runs of 240 seconds with scripted buttons (four in a row, `fx1` to
+`fx4`) get there every time, with no crash and no "unresolved indirect
+call".
 
 What it took, with the cause of each:
 
@@ -79,15 +86,42 @@ What it took, with the cause of each:
   task that parks in `WAIT_SIGNAL` while its queue already holds entries
   resumes instead of sleeping (both ported from the Resistance 2 tree;
   `SPURS_LFQ_NOWAKE=1` turns the second off).
+- **The movies (black screen at boot):** the game opens each movie with
+  `cellFsOpen` and hands the descriptor to Bink, which seeks and reads it
+  with the raw lv2 syscalls (818/802). Those keep their own descriptor table
+  and knew nothing of a `cellFs` one, so every movie failed to open and the
+  boot sat on black frames after `bng.bik`. lv2 read, lseek and fstat now fall
+  back to the `cellFs` table.
+- **The skinning job chain (frozen after New Game):** the render thread
+  waits for an event from the NTG SPU skinning chain, and nothing walked it.
+  The job binaries are raw blobs, not SPU ELFs, so they were never lifted
+  ("dispatch MISS"); `tools/lift_jobs.sh` lifts them. The chain is kicked at
+  boot and sits on its guard until a game starts, and the walker's 20 s
+  give-up ended it (`SPURS_JG_WAIT_FOREVER=1`). The ring's last job sends the
+  one event per lap the render thread waits for, on a queue of depth 1, and
+  a synthetic event per job filled it first (`SPURS_JC_EVENT_FROM_JOB=1`).
+  And the job reads its buffer counts and DMA tag past the 48-byte job
+  context (an older layout); unset, it halted on its own guard, or PUT its
+  whole local store over the game's code at `0x10000`
+  (`SPURS_JOB_CTX_V1=1`). A DMA PUT into the executable's read-only segment
+  is now dropped, as it faults on hardware.
+- **Jump tables (New Game spinning on a NULL):** the lifter resolves a
+  `switch` only over the cases inside the function it lifted, and cases past
+  where it cut a large function went through the indirect-call fallback,
+  which needs a lifted function at the case address. The engine's message
+  dispatcher (`func_001EA288`, 4,191 cases) lost case `0x1F079C` that way.
+  `tools/augment_functions.py` splits the function list at every case target
+  of the tables in `tools/jumptables.txt` before lifting.
 
 Known issues, being worked on:
 
-- **Black frames.** The game draws (10 draws a frame into 11 surfaces) and
-  flips, but the image is black. The logo movie is opened and nothing shows;
-  it is not known yet whether the Bink frames are not being decoded, not
-  uploaded, or drawn and lost in the backend.
-- **Input** has not been tested; there is no controller mapping of the
-  port's own.
+- **Black after the loading screen.** New Game shows the 3D loading screen,
+  then black frames; the cause is not known yet.
+- **The skinning jobs are captured at run time:** `tools/lift_jobs.sh` lifts
+  the job binaries a run has dumped, so a first build needs one run into New
+  Game with `SPU_DUMP_MISS` before them (see [Building](#building)).
+- **Input** has only been driven by `PAD_SCRIPT`; a real controller and the
+  keyboard have not been tested.
 
 ## How it works
 
@@ -96,13 +130,18 @@ Known issues, being worked on:
    file. RPCS3 is not needed.
 2. **Analyse and lift** it with the toolkit's `ppu_loader.py` and
    `ppu_lifter.py`: 12,869 functions in the OPD table, 32,951 emitted by the
-   lifter, as C++ in `recompiled/BLUS30264/` (16 translation units).
+   lifter, as C++ in `recompiled/BLUS30264/` (16 translation units). Before
+   lifting, `tools/augment_functions.py` adds the case targets of the jump
+   tables in `tools/jumptables.txt` to the function list.
 3. **SPU code:** the 20 SPU ELFs embedded in the EBOOT are cut out by the
    toolkit's `extract_spu_images.py` and lifted by `tools/lift_spu.sh` into
    `port/spu/`: EDGE ZLIB inflate (`spu_0000`), the FMOD Ex SPURS mixer
-   (`spu_0001`) and 18 FMOD codec and DSP plugins (`spu_0002`–`spu_0019`).
-   The SPU skinning job (`ntg/graphics/render/src/ps3/spu_skinning`) is not
-   among them; it is expected as raw bytes, as in Resistance 2.
+   (`spu_0001`, lifted with every call's return as an entry, so the plugins
+   return into lifted code) and 18 FMOD codec and DSP plugins
+   (`spu_0002`–`spu_0019`). The SPURS job binaries of the skinning chain are
+   not ELFs: a run dumps them (`SPU_DUMP_MISS`) and `tools/lift_jobs.sh`
+   lifts them (the 17,552-byte skinning job `8B2B4776E3A079D8` and the
+   112-byte job beside it, `37DA975A7C220171`).
 4. **Build** with CMake/Ninja against the toolkit: the runtime (LV2
    syscalls, HLE firmware libraries, SPURS, the Metal RSX backend) plus the
    lifted code, into `build/BLUS30264/AfroSamuraiRecomp`.
@@ -164,6 +203,12 @@ tools/rebuild.sh            # stage, decrypt, analyse, lift, spu, build
 | `spu` | `extract_spu_images.py` and `tools/lift_spu.sh` → `port/spu/` |
 | `build` | CMake (once) + `tools/build.sh` → `build/BLUS30264/AfroSamuraiRecomp` |
 
+The skinning jobs are not in `rebuild.sh` yet: they are captured from a run.
+After the first build, run once into New Game with
+`SPU_DUMP_MISS=$PWD/cache/jobs` (the probe below does it), then
+`tools/lift_jobs.sh` and `tools/rebuild.sh build`. Without them the game
+stops on a black screen after New Game.
+
 The first build compiles a lot of generated code and takes a while. Always
 build through `tools/build.sh`: it refuses to start while another Ninja is
 running (also another port's), stops if memory runs low (exit 99) and asks
@@ -174,7 +219,7 @@ parallel compiles, default 2). The tools need Python 3.10 or newer
 
 ## Playing
 
-There is nothing to play yet. To run it:
+There is nothing to play past the menus yet. To run it:
 
 ```sh
 tools/run.sh
@@ -201,10 +246,17 @@ arguments are environment overrides: `tools/run.sh PS3_VERBOSE=1`.
 | `SAVEDATA_CBRESULT_STRICT=0` | `ERR_NODATA` back to `ERROR_NODATA` (the "damaged save" stop) |
 | `SPU_INTERP_UNLIFTED` | interpret SPU code with no lifted body (set by `port/main.cpp`; no off switch yet) |
 | `SPURS_LFQ_NOWAKE=1` | turns off the LF-queue wake fix (for comparison) |
+| `SPURS_JG_WAIT_FOREVER=0` | the job-chain walker gives up on a closed guard after 20 s again (the skinning chain dies before New Game) |
+| `SPURS_JC_EVENT_FROM_JOB=0` | a synthetic event per job again (the render thread's event is dropped) |
+| `SPURS_JOB_CTX_V1` | fills the older job-context fields the skinning job reads (set by `port/main.cpp`; no off switch yet) |
+| `SPU_DUMP_MISS=<dir>` | writes every SPU job binary with no lifted code to `<dir>` (for `tools/lift_jobs.sh`) |
 | `SYS_MEMPOOL_LOG=1`, `PS3_MEMTRACE=1`, `PS3_LFQ_LOG=<n>` | trace mempools / address reservations / the first n LF-queue pushes |
+| `AFRO_TEXT_RO=1` | makes the game's code read-only after load, so a host write into it (an HLE copy, an SPU DMA, a file read) stops with its caller; `AFRO_TEXT_RO_CONT=1` reports each writer once and goes on |
 | `AFRO_WRAP=<program>` | runs the game under a wrapper (a debugger script) |
 
-The four defaults above are set in `afro_defaults()` in
+The seven defaults above (`PS3_MMAPPER_TRACK`, `PS3_MAPPER_WIDE`,
+`SPU_INTERP_UNLIFTED`, `SAVEDATA_CBRESULT_STRICT` and the three `SPURS_*`
+job switches) are set in `afro_defaults()` in
 [`port/main.cpp`](port/main.cpp) unless they are already in the environment.
 
 ### Diagnostics
@@ -222,6 +274,16 @@ seconds). It stops only the process it started.
 PROBE_SNAP=5 tools/probe.sh boot 80
 ```
 
+Into New Game, as tested (START every second from 85 to 100 s through the
+movies and the title, then CROSS every 2 s from 101 to 145 s through the
+menu; the timing can miss, run it again if it does):
+
+```sh
+B=""; for t in $(seq 85 100); do B="$B$t:0x0008,"; done
+for t in $(seq 101 2 145); do B="$B$t:0x4000,"; done
+PROBE_SNAP=10 tools/probe.sh newgame 240 PAD_SCRIPT="${B%,}" SPU_DUMP_MISS=$PWD/cache/jobs
+```
+
 A debugger does not launch the game cleanly; attaching `lldb` to the
 running process does, and guest memory is read through the `vm_base` symbol
 (big-endian).
@@ -231,8 +293,8 @@ running process does, and guest memory is read through the `vm_base` symbol
 | Path | What it is |
 | --- | --- |
 | [`port/`](port/) | The port: `main.cpp` (boot, guest thread, `afro_defaults()`), `stubs.cpp` (PRX hook and overrides, empty for now), `CMakeLists.txt`, `spu/` (written by `tools/lift_spu.sh`: the lifted SPU code and `spu_workloads.c`, never committed) |
-| [`tools/`](tools/) | `rebuild.sh`, `build.sh`, `run.sh`, `probe.sh`, `mount.sh`, `env.sh`, `decrypt_self.py`, `lift_spu.sh` |
-| [`docs/`](docs/) | `game-manifest.md`: the disc, the executable, the engine, the imports and the SPU images |
+| [`tools/`](tools/) | `rebuild.sh`, `build.sh`, `run.sh`, `probe.sh`, `mount.sh`, `env.sh`, `decrypt_self.py`, `lift_spu.sh`, `lift_jobs.sh`, `augment_functions.py` and `jumptables.txt` (the jump tables whose cases are lifted as functions) |
+| [`docs/`](docs/) | `game-manifest.md`: the disc, the executable, the engine, the imports and the SPU images; `screenshots/` |
 | [`patches/`](patches/) | The toolkit patch over ps3recomp v0.19.0 (`ae92407b`) |
 | [`ROADMAP.md`](ROADMAP.md) | Status and next steps |
 | `afro_samurai_ps3_recomp_enhanced.md` | The original plan (Portuguese), with the Enhanced Edition ideas |

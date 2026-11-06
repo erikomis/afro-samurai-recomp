@@ -8,12 +8,14 @@ vem a seguir. Mesma organização dos roadmaps do inFAMOUS 2 e dos Resistance.
 
 ## Resumo (06/11/2026)
 
-- **Dá boot até uma tela preta:** heaps e construtores estáticos → SPURS (5
-  SPUs) e as threads do jogo → o save carregado → áudio FMOD Ex ligado → o
-  vídeo do logo da Bandai Namco (`bng.bik`) aberto → uns 54 quadros por
-  segundo, 10 draws cada, todos pretos. Um teste headless de 80 segundos
-  termina com o jogo ainda apresentando quadros: sem crash, sem travar.
-- **Nada visto na tela ainda:** nem logo, nem menu, nem gameplay.
+- **Menu principal e New Game:** heaps e construtores estáticos → SPURS (5
+  SPUs) e as threads do jogo → o save carregado → áudio FMOD Ex ligado → os
+  vídeos de logo e de créditos → o menu principal sobre o vídeo de fundo →
+  New Game → a tela 3D de carregamento → quadros pretos. Quatro testes
+  headless de 240 segundos seguidos, com botões por script, chegam lá sem
+  crash.
+- **Nenhuma gameplay vista ainda:** a tela fica preta depois da tela de
+  carregamento.
 - **Toolkit:** ps3recomp v0.19.0 do upstream (`ae92407b`) mais as mudanças
   genéricas deste port, controladas por variáveis de ambiente, num patch só
   (`patches/ps3recomp-ae92407b-afro.patch`).
@@ -61,30 +63,49 @@ vem a seguir. Mesma organização dos roadmaps do inFAMOUS 2 e dos Resistance.
   `func_002D13B8` (o registro global em `[r30-0x7FA0]+4`): o boot agora segue
   para o carregador de terreno, o worker de save, o áudio e o vídeo do logo.
 - [x] O trace temporário `[afro-memset]` retirado do código traduzido.
+- [x] Os quadros pretos no boot: os vídeos abrem. O Bink lê o descritor do
+  `cellFs` que o jogo entrega a ele pelas syscalls cruas do lv2; agora read,
+  lseek e fstat do lv2 recorrem à tabela do `cellFs`.
+- [x] Os vídeos de logo e de créditos (`bng.bik`, `two_headbands.bik`,
+  `afro_credit.bik`) e o menu principal sobre o `background_movie.bik`.
+- [x] O `PAD_SCRIPT` chega ao jogo: START pela tela de título, CROSS pelo
+  menu até o New Game.
+- [x] A cadeia de skinning em SPU: os binários dos jobs gravados
+  (`SPU_DUMP_MISS`) e traduzidos (`tools/lift_jobs.sh`); o percorredor espera
+  num guard fechado em vez de desistir depois de 20 s
+  (`SPURS_JG_WAIT_FOREVER`); só os eventos dos próprios jobs são postados
+  (`SPURS_JC_EVENT_FROM_JOB`, a fila de profundidade 1 que a thread de render
+  espera); os campos do contexto de job antigo que o job lê
+  (`SPURS_JOB_CTX_V1`, a parada no guard e o PUT por cima do código do jogo);
+  PUTs de DMA no segmento só-leitura descartados.
+- [x] O diagnóstico `AFRO_TEXT_RO=1`: o código do jogo só-leitura depois do
+  carregamento, para uma escrita do host nele parar mostrando quem chamou
+  (pegou o PUT do job de skinning).
+- [x] Alvos das tabelas de salto traduzidos como funções
+  (`tools/augment_functions.py`, `tools/jumptables.txt`): o caso perdido
+  `0x1F079C` do despachante de mensagens e o New Game girando num NULL;
+  nenhum "unresolved indirect call" em quatro testes.
+- [x] O New Game chega à tela 3D de carregamento.
 
-## Próximos passos: uma imagem na tela
+## Próximos passos: até a primeira luta
 
 ### Bloqueios
 
-- [ ] (em andamento) **Quadros pretos.** O jogo desenha (10 draws em 11
-  superfícies por quadro) e faz flip a uns 54 Hz, e todos os quadros saem
-  pretos. Descobrir onde a imagem se perde: os quadros do Bink não
-  decodificados (as threads "Bink Audio" e "Bink IO", o decodificador na PPU
-  ou na SPU), não enviados para a textura que o jogo desenha, ou desenhados e
-  perdidos no backend Metal (formatos de superfície, o alvo de saída, o
-  buffer de display que o flip indica).
-- [ ] O vídeo do logo tocado até o fim, e o jogo seguindo dele para a
-  próxima tela.
-- [ ] O job de skinning em SPU (`spu_skinning`): achá-lo em bytes crus no
-  EBOOT ou no `ps3.psarc` (não está entre os 20 ELFs), recortar e traduzir,
-  como os programas SPU crus do Resistance 2.
+- [ ] (em andamento) **Preto depois da tela de carregamento.** O New Game
+  mostra a tela 3D de "Loading..." e depois quadros pretos; descobrir o que o
+  jogo espera ou desenha ali.
+- [ ] Vigiar os logs por mais alvos de "unresolved indirect call" e
+  acrescentar as tabelas deles ao `tools/jumptables.txt` (ou deixar a busca
+  achá-las).
+- [ ] Os jobs de skinning recortados do EBOOT ou do `ps3.psarc` no rebuild,
+  para um primeiro build não precisar de uma execução até o New Game para
+  capturá-los.
 
-### Até os menus
+### Os menus, de verdade
 
-- [ ] As telas legais e dos estúdios, a tela de título e o menu principal,
-  renderizados corretamente.
-- [ ] Entrada: um controle pelo pad SDL do toolkit, depois teclado e mouse;
-  confirmar que o `PAD_SCRIPT` chega ao jogo.
+- [ ] As telas legais e dos estúdios, a tela de título e os menus conferidos
+  com o PS3 (todas as opções, Treasures).
+- [ ] Entrada: um controle pelo pad SDL do toolkit, depois teclado e mouse.
 - [ ] Som e música dos menus (FMOD no SPURS), em sincronia com os vídeos.
 
 ### Até a primeira luta
@@ -191,7 +212,12 @@ bug do port e bug do jogo original são coisas diferentes.
 - [ ] Mandar as correções genéricas do toolkit para o
   [sp00nznet/ps3recomp](https://github.com/sp00nznet/ps3recomp), cada uma com
   um teste: `sys_mempool`, o mapeador com controle e as reservas em ordem
-  crescente, `ERROR_CBRESULT` para um callback de stat negativo, `cellKbRead`.
+  crescente, `ERROR_CBRESULT` para um callback de stat negativo, `cellKbRead`,
+  read / lseek / fstat do lv2 num descritor do `cellFs`, a espera no guard e
+  os eventos mandados pelos jobs no percorredor da cadeia, os campos do
+  contexto de job antigo, PUTs de DMA no segmento só-leitura descartados.
+- [ ] A divisão nos casos das tabelas de salto (`augment_functions.py`) como
+  opção do lifter no upstream, para todo port ganhar.
 - [x] O próprio repositório git (`afro-samurai-recomp`): os fontes do port, o
   patch do toolkit, README, a licença e um `.gitignore` que bloqueia dados do
   jogo, firmware, chaves e saves.

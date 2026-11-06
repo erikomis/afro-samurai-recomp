@@ -7,13 +7,17 @@ Port nativo do **Afro Samurai** (PS3, disco `BLUS30264`, v01.00) para
 jogo é traduzido para C/C++ e compilado como um executável nativo, com
 gráficos em Metal. Não é um emulador.
 
-**Ele dá boot, mas a tela fica preta.** O jogo passa pela inicialização
-(heaps de memória, SPURS com 5 SPUs, as threads de arquivo e de render, o
-carregador de terreno), carrega o save, liga o áudio (FMOD Ex no SPURS) e
-abre o vídeo do logo da Bandai Namco (`bng.bik`). Dali em diante apresenta
-quadros sem parar, uns 54 por segundo com 10 draws cada, pelo tempo que for
-deixado rodando, mas todos os quadros são pretos. Nada depois desse ponto foi
-visto ainda; veja [Estado](#estado).
+**Ele chega ao menu principal e, pelo New Game, à tela de carregamento.** O
+jogo passa pela inicialização (heaps de memória, SPURS com 5 SPUs, as threads
+de arquivo e de render, o carregador de terreno), carrega o save, liga o
+áudio (FMOD Ex no SPURS), toca os vídeos de logo e de créditos e mostra o
+menu principal (Continue, New Game, Options, Treasures) sobre o vídeo de
+fundo. O New Game segue até a tela 3D de "Loading..."; depois dela a tela
+fica preta, e nada além disso foi visto ainda. Veja [Estado](#estado).
+
+| | |
+| --- | --- |
+| [<img src="docs/screenshots/01-main-menu.png" width="420" alt="Menu principal: Continue, New Game, Options, Treasures">](docs/screenshots/01-main-menu.png)<br>O menu principal | [<img src="docs/screenshots/02-loading.png" width="420" alt="A tela 3D de carregamento depois do New Game">](docs/screenshots/02-loading.png)<br>New Game: a tela de carregamento |
 
 Construído sobre o [ps3recomp](https://github.com/sp00nznet/ps3recomp), com a
 organização e as ferramentas dos outros ports do mesmo autor
@@ -22,9 +26,10 @@ organização e as ferramentas dos outros ports do mesmo autor
 [Resistance 2](https://github.com/erikomis/resistance2-recomp)).
 
 > [!WARNING]
-> **Trabalho em andamento, bem no começo.** Ainda não mostra imagem, muito
-> menos menu ou gameplay. Não há releases: você mesmo compila o jogo a partir
-> do seu disco. Só macOS com Apple silicon. O que falta está no
+> **Trabalho em andamento, bem no começo.** Os menus aparecem, mas ainda não
+> há gameplay: o New Game para numa tela preta depois da tela de
+> carregamento. Não há releases: você mesmo compila o jogo a partir do seu
+> disco. Só macOS com Apple silicon. O que falta está no
 > [ROADMAP.pt-BR.md](ROADMAP.pt-BR.md).
 
 > **Este repositório não contém dados do jogo, firmware, chaves da Sony nem
@@ -35,9 +40,12 @@ organização e as ferramentas dos outros ports do mesmo autor
 ## Estado
 
 Em 06/11/2026: boot → heaps e construtores estáticos → SPURS e as threads do
-jogo → o save é carregado → áudio ligado → o vídeo do logo é aberto → um
-fluxo constante de quadros pretos. Um teste headless de 80 segundos termina
-com o jogo ainda apresentando quadros; sem crash e sem travar.
+jogo → o save é carregado → áudio ligado → os vídeos de logo e de créditos
+(`bng.bik`, `two_headbands.bik`, `afro_credit.bik`) → o menu principal sobre
+o `background_movie.bik` → New Game → a tela 3D de carregamento → quadros
+pretos. Testes headless de 240 segundos com botões por script (quatro
+seguidos, `fx1` a `fx4`) chegam lá todas as vezes, sem crash e sem nenhum
+"unresolved indirect call".
 
 O que foi preciso, com a causa de cada um:
 
@@ -81,16 +89,45 @@ O que foi preciso, com a causa de cada um:
   consumidor SPU lê, e uma tarefa que estaciona em `WAIT_SIGNAL` com a fila já
   tendo entradas continua em vez de dormir (os dois trazidos da árvore do
   Resistance 2; `SPURS_LFQ_NOWAKE=1` desliga o segundo).
+- **Os vídeos (tela preta no boot):** o jogo abre cada vídeo com
+  `cellFsOpen` e entrega o descritor ao Bink, que faz seek e lê com as
+  syscalls cruas do lv2 (818/802). Elas têm a própria tabela de descritores e
+  não sabiam nada de um descritor do `cellFs`, então todo vídeo falhava ao
+  abrir e o boot ficava em quadros pretos depois do `bng.bik`. Agora read,
+  lseek e fstat do lv2 recorrem à tabela do `cellFs`.
+- **A cadeia de jobs de skinning (congelado depois do New Game):** a thread
+  de render espera um evento da cadeia de skinning em SPU do NTG, e ninguém a
+  percorria. Os binários dos jobs são blobs crus, não ELFs SPU, então nunca
+  eram traduzidos ("dispatch MISS"); o `tools/lift_jobs.sh` traduz. A cadeia é
+  disparada no boot e fica parada no guard até começar um jogo, e o
+  desistir-depois-de-20-s do percorredor a encerrava
+  (`SPURS_JG_WAIT_FOREVER=1`). O último job do anel manda o único evento por
+  volta que a thread de render espera, numa fila de profundidade 1, e um
+  evento sintético por job a enchia antes (`SPURS_JC_EVENT_FROM_JOB=1`). E o
+  job lê a contagem de buffers e a tag de DMA além dos 48 bytes do contexto
+  de job (um layout mais antigo); sem eles, parava no próprio guard ou fazia
+  PUT de todo o local store por cima do código do jogo em `0x10000`
+  (`SPURS_JOB_CTX_V1=1`). Um PUT de DMA no segmento só-leitura do executável
+  agora é descartado, como dá falha no hardware.
+- **Tabelas de salto (New Game girando num NULL):** o lifter resolve um
+  `switch` só com os casos que estão dentro da função que ele traduziu, e os
+  casos depois do ponto onde ele cortou uma função grande iam pelo fallback
+  de chamada indireta, que precisa de uma função traduzida no endereço do
+  caso. O despachante de mensagens do motor (`func_001EA288`, 4.191 casos)
+  perdia o caso `0x1F079C` assim. O `tools/augment_functions.py` divide a
+  lista de funções em cada alvo das tabelas do `tools/jumptables.txt` antes
+  de traduzir.
 
 Problemas conhecidos, sendo resolvidos:
 
-- **Quadros pretos.** O jogo desenha (10 draws por quadro em 11
-  superfícies) e faz flip, mas a imagem é preta. O vídeo do logo é aberto e
-  nada aparece; ainda não se sabe se os quadros do Bink não estão sendo
-  decodificados, não estão sendo enviados, ou se são desenhados e se perdem
-  no backend.
-- **Entrada** ainda não foi testada; o port não tem mapeamento de controle
-  próprio.
+- **Preto depois da tela de carregamento.** O New Game mostra a tela 3D de
+  carregamento e depois quadros pretos; a causa ainda não é conhecida.
+- **Os jobs de skinning são capturados em execução:** o `tools/lift_jobs.sh`
+  traduz os binários de job que um teste gravou, então um primeiro build
+  precisa antes de uma execução até o New Game com `SPU_DUMP_MISS` (veja
+  [Compilando](#compilando)).
+- **Entrada** só foi acionada pelo `PAD_SCRIPT`; um controle de verdade e o
+  teclado ainda não foram testados.
 
 ## Como funciona
 
@@ -100,13 +137,18 @@ Problemas conhecidos, sendo resolvidos:
    RPCS3.
 2. **Analisar e traduzir** com o `ppu_loader.py` e o `ppu_lifter.py` do
    toolkit: 12.869 funções na tabela OPD, 32.951 emitidas pelo lifter, como
-   C++ em `recompiled/BLUS30264/` (16 unidades de tradução).
+   C++ em `recompiled/BLUS30264/` (16 unidades de tradução). Antes da
+   tradução, o `tools/augment_functions.py` acrescenta à lista de funções os
+   alvos das tabelas de salto do `tools/jumptables.txt`.
 3. **Código SPU:** os 20 ELFs SPU embutidos no EBOOT são recortados pelo
    `extract_spu_images.py` do toolkit e traduzidos pelo `tools/lift_spu.sh`
    em `port/spu/`: EDGE ZLIB inflate (`spu_0000`), o mixer SPURS do FMOD Ex
-   (`spu_0001`) e 18 plugins de codec e DSP do FMOD (`spu_0002`–`spu_0019`).
-   O job de skinning em SPU (`ntg/graphics/render/src/ps3/spu_skinning`) não
-   está entre eles; espera-se que esteja em bytes crus, como no Resistance 2.
+   (`spu_0001`, traduzido com o retorno de cada chamada como entrada, para os
+   plugins voltarem para código traduzido) e 18 plugins de codec e DSP do
+   FMOD (`spu_0002`–`spu_0019`). Os binários de job SPURS da cadeia de
+   skinning não são ELFs: um teste grava esses binários (`SPU_DUMP_MISS`) e o
+   `tools/lift_jobs.sh` traduz (o job de skinning de 17.552 bytes
+   `8B2B4776E3A079D8` e o job de 112 bytes ao lado dele, `37DA975A7C220171`).
 4. **Compilar** com CMake/Ninja contra o toolkit: o runtime (syscalls do
    LV2, bibliotecas de firmware em HLE, SPURS, o backend RSX em Metal) mais o
    código traduzido, em `build/BLUS30264/AfroSamuraiRecomp`.
@@ -168,6 +210,12 @@ por exemplo `tools/rebuild.sh spu build`):
 | `spu` | `extract_spu_images.py` e `tools/lift_spu.sh` → `port/spu/` |
 | `build` | CMake (uma vez) + `tools/build.sh` → `build/BLUS30264/AfroSamuraiRecomp` |
 
+Os jobs de skinning ainda não estão no `rebuild.sh`: eles são capturados de
+uma execução. Depois do primeiro build, rode uma vez até o New Game com
+`SPU_DUMP_MISS=$PWD/cache/jobs` (o probe abaixo faz isso), depois
+`tools/lift_jobs.sh` e `tools/rebuild.sh build`. Sem eles o jogo para numa
+tela preta depois do New Game.
+
 A primeira compilação passa por muito código gerado e demora. Compile
 sempre pelo `tools/build.sh`: ele se recusa a começar enquanto outro Ninja
 estiver rodando (inclusive o de outro port), para se a memória ficar baixa
@@ -179,7 +227,7 @@ Os caminhos estão no [`tools/env.sh`](tools/env.sh).
 
 ## Jogando
 
-Ainda não há nada para jogar. Para rodar:
+Ainda não há nada para jogar além dos menus. Para rodar:
 
 ```sh
 tools/run.sh
@@ -206,10 +254,17 @@ Argumentos a mais são variáveis de ambiente: `tools/run.sh PS3_VERBOSE=1`.
 | `SAVEDATA_CBRESULT_STRICT=0` | `ERR_NODATA` volta a ser `ERROR_NODATA` (a parada do "save danificado") |
 | `SPU_INTERP_UNLIFTED` | interpreta o código SPU sem corpo traduzido (definida pelo `port/main.cpp`; ainda sem como desligar) |
 | `SPURS_LFQ_NOWAKE=1` | desliga a correção de despertar da fila LF (para comparação) |
+| `SPURS_JG_WAIT_FOREVER=0` | o percorredor da cadeia de jobs volta a desistir de um guard fechado depois de 20 s (a cadeia de skinning morre antes do New Game) |
+| `SPURS_JC_EVENT_FROM_JOB=0` | volta um evento sintético por job (o evento da thread de render se perde) |
+| `SPURS_JOB_CTX_V1` | preenche os campos do contexto de job antigo que o job de skinning lê (definida pelo `port/main.cpp`; ainda sem como desligar) |
+| `SPU_DUMP_MISS=<pasta>` | grava em `<pasta>` todo binário de job SPU sem código traduzido (para o `tools/lift_jobs.sh`) |
 | `SYS_MEMPOOL_LOG=1`, `PS3_MEMTRACE=1`, `PS3_LFQ_LOG=<n>` | rastreia mempools / reservas de endereço / os n primeiros pushes na fila LF |
+| `AFRO_TEXT_RO=1` | deixa o código do jogo só-leitura depois do carregamento, para uma escrita do host nele (uma cópia HLE, um DMA de SPU, uma leitura de arquivo) parar mostrando quem chamou; `AFRO_TEXT_RO_CONT=1` relata cada escritor uma vez e continua |
 | `AFRO_WRAP=<programa>` | roda o jogo dentro de um wrapper (um script de depurador) |
 
-Os quatro padrões acima são definidos em `afro_defaults()` no
+Os sete padrões acima (`PS3_MMAPPER_TRACK`, `PS3_MAPPER_WIDE`,
+`SPU_INTERP_UNLIFTED`, `SAVEDATA_CBRESULT_STRICT` e as três chaves `SPURS_*`
+de jobs) são definidos em `afro_defaults()` no
 [`port/main.cpp`](port/main.cpp), a não ser que já estejam no ambiente.
 
 ### Diagnóstico
@@ -228,6 +283,16 @@ processo que ele mesmo iniciou.
 PROBE_SNAP=5 tools/probe.sh boot 80
 ```
 
+Até o New Game, como testado (START a cada segundo de 85 a 100 s, pelos
+vídeos e pela tela de título, depois CROSS a cada 2 s de 101 a 145 s pelo
+menu; o tempo pode falhar, rode de novo se falhar):
+
+```sh
+B=""; for t in $(seq 85 100); do B="$B$t:0x0008,"; done
+for t in $(seq 101 2 145); do B="$B$t:0x4000,"; done
+PROBE_SNAP=10 tools/probe.sh newgame 240 PAD_SCRIPT="${B%,}" SPU_DUMP_MISS=$PWD/cache/jobs
+```
+
 Iniciar o jogo pelo depurador não funciona direito; anexar o `lldb` ao
 processo já rodando funciona, e a memória do guest é lida pelo símbolo
 `vm_base` (big-endian).
@@ -237,8 +302,8 @@ processo já rodando funciona, e a memória do guest é lida pelo símbolo
 | Caminho | O que é |
 | --- | --- |
 | [`port/`](port/) | O port: `main.cpp` (boot, thread do guest, `afro_defaults()`), `stubs.cpp` (hook de PRX e substituições, vazio por enquanto), `CMakeLists.txt`, `spu/` (gerado pelo `tools/lift_spu.sh`: o código SPU traduzido e o `spu_workloads.c`, nunca vão para o repositório) |
-| [`tools/`](tools/) | `rebuild.sh`, `build.sh`, `run.sh`, `probe.sh`, `mount.sh`, `env.sh`, `decrypt_self.py`, `lift_spu.sh` |
-| [`docs/`](docs/) | `game-manifest.md`: o disco, o executável, o motor, os imports e as imagens SPU |
+| [`tools/`](tools/) | `rebuild.sh`, `build.sh`, `run.sh`, `probe.sh`, `mount.sh`, `env.sh`, `decrypt_self.py`, `lift_spu.sh`, `lift_jobs.sh`, `augment_functions.py` e `jumptables.txt` (as tabelas de salto cujos casos viram funções) |
+| [`docs/`](docs/) | `game-manifest.md`: o disco, o executável, o motor, os imports e as imagens SPU; `screenshots/` |
 | [`patches/`](patches/) | O patch do toolkit sobre o ps3recomp v0.19.0 (`ae92407b`) |
 | [`ROADMAP.pt-BR.md`](ROADMAP.pt-BR.md) | Estado e próximos passos |
 | `afro_samurai_ps3_recomp_enhanced.md` | O plano original, com as ideias da Enhanced Edition |
