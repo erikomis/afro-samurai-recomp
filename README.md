@@ -7,16 +7,16 @@ A native port of **Afro Samurai** (PS3, disc `BLUS30264`, v01.00) to
 code is translated to C/C++ and compiled into a native executable, with
 graphics on Metal. It is not an emulator.
 
-**It reaches the main menu and, from New Game, the loading screen.** The
-game gets through its start-up (memory heaps, SPURS with 5 SPUs, the file and
-render threads, the terrain loader), loads its save, starts the audio (FMOD
-Ex on SPURS), plays the logo and credit movies and shows the main menu
-(Continue, New Game, Options, Treasures) over its background movie. New Game
-goes on to the 3D "Loading..." screen; after it the screen turns black, and
-nothing past that has been seen yet. See [Status](#status).
+**It reaches gameplay, and the game renders correctly.** From the boot
+through the logo movies, the main menu and New Game (or Continue), the first
+level plays in a window with a controller: Afro, Ninja Ninja and the village
+are drawn textured and lit, and the opening cutscene and the combat tutorial
+run. It has been played in a window without a crash; the frame rate and a
+longer play-through are what is being looked at now. See [Status](#status).
 
 | | |
 | --- | --- |
+| [<img src="docs/screenshots/03-gameplay-village.png" width="420" alt="Afro from behind, sword drawn, in the village at dusk">](docs/screenshots/03-gameplay-village.png)<br>Gameplay: Afro in the village | [<img src="docs/screenshots/04-ninja-ninja.png" width="420" alt="Ninja Ninja leaning against a tree by a lit lantern">](docs/screenshots/04-ninja-ninja.png)<br>Ninja Ninja |
 | [<img src="docs/screenshots/01-main-menu.png" width="420" alt="Main menu: Continue, New Game, Options, Treasures">](docs/screenshots/01-main-menu.png)<br>The main menu | [<img src="docs/screenshots/02-loading.png" width="420" alt="The 3D loading screen after New Game">](docs/screenshots/02-loading.png)<br>New Game: the loading screen |
 
 Built on [ps3recomp](https://github.com/sp00nznet/ps3recomp), with the layout
@@ -26,10 +26,11 @@ and the tools of the author's other ports
 [Resistance 2](https://github.com/erikomis/resistance2-recomp)).
 
 > [!WARNING]
-> **Very early work in progress.** The menus show, but there is no gameplay
-> yet: New Game stops at a black screen after the loading screen. There are no
-> releases: you build the game yourself from your own disc. Apple-silicon
-> macOS only. What is missing is in [ROADMAP.md](ROADMAP.md).
+> **Early work in progress.** The first level is playable, but only its
+> start has been played, and the frame rate is still being measured and
+> worked on. There are no releases: you build the game yourself from your own
+> disc. Apple-silicon macOS only. What is missing is in
+> [ROADMAP.md](ROADMAP.md).
 
 > **This repository contains no game data, no firmware, no Sony keys and
 > nothing translated from them.** Everyone generates all of that locally from
@@ -38,13 +39,32 @@ and the tools of the author's other ports
 
 ## Status
 
-As of 2026-11-06: boot → heaps and static constructors → SPURS and the
+As of 2026-11-07: boot → heaps and static constructors → SPURS and the
 game's threads → the save is loaded → audio up → the logo and credit movies
 (`bng.bik`, `two_headbands.bik`, `afro_credit.bik`) → the main menu over
-`background_movie.bik` → New Game → the 3D loading screen → black frames.
-Headless runs of 240 seconds with scripted buttons (four in a row, `fx1` to
-`fx4`) get there every time, with no crash and no "unresolved indirect
-call".
+`background_movie.bik` → New Game or Continue → the 3D loading screen → the
+opening cutscene and the combat tutorial, rendered correctly, controlled
+with a pad (Xbox Series X and DualSense through SDL). RPCS3 running the same
+disc was the reference for what the scene should look like.
+
+The two fixes that took the game from exploded geometry to a correct scene
+(2026-11-07):
+
+- **JOBLIST in the SPURS job chains.** The renderer laps its skinning chain
+  every frame as [JOB palette] → [JOBLIST of 5 vertex-skinning jobs] → [JOB
+  lap notify]. The HLE chain walker treated JOBLIST as a no-op, so the
+  skinning jobs never ran and about 100 colour draws a frame read another
+  writer's leftovers from the RSX-visible ring: giant stretched triangles.
+  The walker now runs a JOBLIST's jobs (`SPURS_JC_JOBLIST=0` skips it).
+- **One job-context pointer per input.** Those skinning jobs take two DMA
+  inputs, and the older job context they read lists one LS pointer per
+  input and then per cache buffer; input 1 pointed at the cache, so the
+  characters were skinned from the wrong data (shards in cutscenes).
+
+Earlier the same day, the vertex programs' start slot: branch targets in RSX
+vertex microcode are absolute, and decompiling every program as if it
+started at slot 0 left branching programs looping 16,384 times per vertex
+(0.4–3 s of GPU per frame).
 
 What it took, with the cause of each:
 
@@ -115,13 +135,12 @@ What it took, with the cause of each:
 
 Known issues, being worked on:
 
-- **Black after the loading screen.** New Game shows the 3D loading screen,
-  then black frames; the cause is not known yet.
-- **The skinning jobs are captured at run time:** `tools/lift_jobs.sh` lifts
-  the job binaries a run has dumped, so a first build needs one run into New
-  Game with `SPU_DUMP_MISS` before them (see [Building](#building)).
-- **Input** has only been driven by `PAD_SCRIPT`; a real controller and the
-  keyboard have not been tested.
+- **Frame rate.** Being measured and worked on (see the ROADMAP).
+- **Only the start of the first level has been played**; the rest of the
+  game is untested.
+- **Keyboard and mouse** have not been tested; a controller works.
+- One headless run stalled once while loading the level (after
+  `LoadRenderThreadProc` exited); not reproduced since, not investigated.
 
 ## How it works
 
@@ -139,8 +158,8 @@ Known issues, being worked on:
    (`spu_0001`, lifted with every call's return as an entry, so the plugins
    return into lifted code) and 18 FMOD codec and DSP plugins
    (`spu_0002`–`spu_0019`). The SPURS job binaries of the skinning chain are
-   not ELFs: a run dumps them (`SPU_DUMP_MISS`) and `tools/lift_jobs.sh`
-   lifts them (the 17,552-byte skinning job `8B2B4776E3A079D8` and the
+   not ELFs: `tools/extract_jobs.py` extracts them from the EBOOT and
+   `tools/lift_jobs.sh` lifts them (the 17,552-byte skinning job `8B2B4776E3A079D8` and the
    112-byte job beside it, `37DA975A7C220171`).
 4. **Build** with CMake/Ninja against the toolkit: the runtime (LV2
    syscalls, HLE firmware libraries, SPURS, the Metal RSX backend) plus the
@@ -203,11 +222,10 @@ tools/rebuild.sh            # stage, decrypt, analyse, lift, spu, build
 | `spu` | `extract_spu_images.py` and `tools/lift_spu.sh` → `port/spu/` |
 | `build` | CMake (once) + `tools/build.sh` → `build/BLUS30264/AfroSamuraiRecomp` |
 
-The skinning jobs are not in `rebuild.sh` yet: they are captured from a run.
-After the first build, run once into New Game with
-`SPU_DUMP_MISS=$PWD/cache/jobs` (the probe below does it), then
-`tools/lift_jobs.sh` and `tools/rebuild.sh build`. Without them the game
-stops on a black screen after New Game.
+The `spu` step also extracts the two known raw skinning-chain jobs directly
+from the decrypted EBOOT, validates their SHA-256 and runtime fingerprints,
+and lifts them. No capture run is needed. To run this alone, use
+`tools/lift_jobs.sh`. Additional jobs can still be captured with `SPU_DUMP_MISS`.
 
 The first build compiles a lot of generated code and takes a while. Always
 build through `tools/build.sh`: it refuses to start while another Ninja is

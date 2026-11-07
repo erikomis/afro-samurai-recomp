@@ -6,16 +6,14 @@ Estado do port nativo do Afro Samurai (`BLUS30264`) para macOS/arm64 e o que
 vem a seguir. Mesma organização dos roadmaps do inFAMOUS 2 e dos Resistance.
 `[x]` = feito e verificado; `[ ]` = a fazer; "(em andamento)" = sendo feito.
 
-## Resumo (06/11/2026)
+## Resumo (07/11/2026)
 
-- **Menu principal e New Game:** heaps e construtores estáticos → SPURS (5
-  SPUs) e as threads do jogo → o save carregado → áudio FMOD Ex ligado → os
-  vídeos de logo e de créditos → o menu principal sobre o vídeo de fundo →
-  New Game → a tela 3D de carregamento → quadros pretos. Quatro testes
-  headless de 240 segundos seguidos, com botões por script, chegam lá sem
-  crash.
-- **Nenhuma gameplay vista ainda:** a tela fica preta depois da tela de
-  carregamento.
+- **A gameplay é desenhada corretamente:** boot → menus → New Game ou
+  Continue → a tela 3D de carregamento → a cutscene de abertura e o tutorial
+  de combate, com o Afro, o Ninja Ninja e a vila com textura e iluminação,
+  jogado numa janela com controle sem crash. O RPCS3 com o mesmo disco foi a
+  referência visual.
+- **Próximo:** a taxa de quadros, e jogar além dos primeiros minutos.
 - **Toolkit:** ps3recomp v0.19.0 do upstream (`ae92407b`) mais as mudanças
   genéricas deste port, controladas por variáveis de ambiente, num patch só
   (`patches/ps3recomp-ae92407b-afro.patch`).
@@ -87,19 +85,22 @@ vem a seguir. Mesma organização dos roadmaps do inFAMOUS 2 e dos Resistance.
   nenhum "unresolved indirect call" em quatro testes.
 - [x] O New Game chega à tela 3D de carregamento.
 
-## Próximos passos: até a primeira luta
+## Próximos passos: jogar até o fim, e deixar rápido
 
 ### Bloqueios
 
-- [ ] (em andamento) **Preto depois da tela de carregamento.** O New Game
-  mostra a tela 3D de "Loading..." e depois quadros pretos; descobrir o que o
-  jogo espera ou desenha ali.
+- [x] **Preto, depois geometria explodida, depois da tela de carregamento.**
+  Três causas: vertex programs traduzidos como se começassem no slot 0 (os
+  programas com salto davam 16.384 voltas por vértice); o percorredor de
+  cadeias do SPURS pulava o JOBLIST, então os 5 jobs de skinning de vértices
+  por quadro nunca rodavam e os draws liam sobras de outro escritor no anel; e
+  a segunda entrada dos jobs de skinning apontava para o buffer de cache no
+  contexto de job antigo. As três corrigidas (07/11/2026).
 - [ ] Vigiar os logs por mais alvos de "unresolved indirect call" e
   acrescentar as tabelas deles ao `tools/jumptables.txt` (ou deixar a busca
   achá-las).
-- [ ] Os jobs de skinning recortados do EBOOT ou do `ps3.psarc` no rebuild,
-  para um primeiro build não precisar de uma execução até o New Game para
-  capturá-los.
+- [x] Os dois jobs conhecidos da cadeia de skinning extraídos do EBOOT no
+  rebuild (`tools/extract_jobs.py`), conferidos byte a byte com dumps de execução.
 
 ### Os menus, de verdade
 

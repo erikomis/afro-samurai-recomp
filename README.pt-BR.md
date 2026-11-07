@@ -7,16 +7,16 @@ Port nativo do **Afro Samurai** (PS3, disco `BLUS30264`, v01.00) para
 jogo é traduzido para C/C++ e compilado como um executável nativo, com
 gráficos em Metal. Não é um emulador.
 
-**Ele chega ao menu principal e, pelo New Game, à tela de carregamento.** O
-jogo passa pela inicialização (heaps de memória, SPURS com 5 SPUs, as threads
-de arquivo e de render, o carregador de terreno), carrega o save, liga o
-áudio (FMOD Ex no SPURS), toca os vídeos de logo e de créditos e mostra o
-menu principal (Continue, New Game, Options, Treasures) sobre o vídeo de
-fundo. O New Game segue até a tela 3D de "Loading..."; depois dela a tela
-fica preta, e nada além disso foi visto ainda. Veja [Estado](#estado).
+**Ele chega à gameplay, e o jogo é desenhado corretamente.** Do boot,
+pelos vídeos de logo, pelo menu principal e pelo New Game (ou Continue), a
+primeira fase roda numa janela com controle: o Afro, o Ninja Ninja e a vila
+aparecem com textura e iluminação, e a cutscene de abertura e o tutorial de
+combate rodam. Já foi jogado numa janela sem crash; a taxa de quadros e uma
+partida mais longa são o que está sendo visto agora. Veja [Estado](#estado).
 
 | | |
 | --- | --- |
+| [<img src="docs/screenshots/03-gameplay-village.png" width="420" alt="Afro de costas, espada na mão, na vila ao entardecer">](docs/screenshots/03-gameplay-village.png)<br>Gameplay: o Afro na vila | [<img src="docs/screenshots/04-ninja-ninja.png" width="420" alt="Ninja Ninja encostado numa árvore perto de uma lanterna acesa">](docs/screenshots/04-ninja-ninja.png)<br>Ninja Ninja |
 | [<img src="docs/screenshots/01-main-menu.png" width="420" alt="Menu principal: Continue, New Game, Options, Treasures">](docs/screenshots/01-main-menu.png)<br>O menu principal | [<img src="docs/screenshots/02-loading.png" width="420" alt="A tela 3D de carregamento depois do New Game">](docs/screenshots/02-loading.png)<br>New Game: a tela de carregamento |
 
 Construído sobre o [ps3recomp](https://github.com/sp00nznet/ps3recomp), com a
@@ -26,9 +26,9 @@ organização e as ferramentas dos outros ports do mesmo autor
 [Resistance 2](https://github.com/erikomis/resistance2-recomp)).
 
 > [!WARNING]
-> **Trabalho em andamento, bem no começo.** Os menus aparecem, mas ainda não
-> há gameplay: o New Game para numa tela preta depois da tela de
-> carregamento. Não há releases: você mesmo compila o jogo a partir do seu
+> **Trabalho em andamento, no começo.** A primeira fase é jogável, mas só o
+> começo dela foi jogado, e a taxa de quadros ainda está sendo medida e
+> trabalhada. Não há releases: você mesmo compila o jogo a partir do seu
 > disco. Só macOS com Apple silicon. O que falta está no
 > [ROADMAP.pt-BR.md](ROADMAP.pt-BR.md).
 
@@ -39,13 +39,34 @@ organização e as ferramentas dos outros ports do mesmo autor
 
 ## Estado
 
-Em 06/11/2026: boot → heaps e construtores estáticos → SPURS e as threads do
+Em 07/11/2026: boot → heaps e construtores estáticos → SPURS e as threads do
 jogo → o save é carregado → áudio ligado → os vídeos de logo e de créditos
 (`bng.bik`, `two_headbands.bik`, `afro_credit.bik`) → o menu principal sobre
-o `background_movie.bik` → New Game → a tela 3D de carregamento → quadros
-pretos. Testes headless de 240 segundos com botões por script (quatro
-seguidos, `fx1` a `fx4`) chegam lá todas as vezes, sem crash e sem nenhum
-"unresolved indirect call".
+o `background_movie.bik` → New Game ou Continue → a tela 3D de carregamento →
+a cutscene de abertura e o tutorial de combate, desenhados corretamente, com
+controle (Xbox Series X e DualSense pelo SDL). O RPCS3 rodando o mesmo disco
+foi a referência de como a cena deve ficar.
+
+As duas correções que levaram o jogo da geometria explodida a uma cena
+correta (07/11/2026):
+
+- **JOBLIST nas cadeias de jobs do SPURS.** O renderizador roda sua cadeia
+  de skinning a cada quadro como [JOB paleta] → [JOBLIST de 5 jobs de
+  skinning de vértices] → [JOB aviso de volta]. O percorredor HLE tratava o
+  JOBLIST como nada, então os jobs de skinning nunca rodavam e uns 100 draws
+  de cor por quadro liam sobras de outro escritor no anel visível ao RSX:
+  triângulos gigantes esticados. Agora o percorredor roda os jobs de um
+  JOBLIST (`SPURS_JC_JOBLIST=0` pula de novo).
+- **Um ponteiro do contexto de job por entrada.** Esses jobs de skinning têm
+  duas entradas de DMA, e o contexto de job antigo que eles leem lista um
+  ponteiro de LS por entrada e depois um por buffer de cache; a entrada 1
+  apontava para o cache, então os personagens eram deformados a partir dos
+  dados errados (cacos nas cutscenes).
+
+Antes, no mesmo dia, o slot inicial dos vertex programs: os destinos de
+salto no microcódigo de vértice do RSX são absolutos, e traduzir todo
+programa como se começasse no slot 0 deixava os programas com salto rodando
+16.384 vezes por vértice (0,4–3 s de GPU por quadro).
 
 O que foi preciso, com a causa de cada um:
 
@@ -120,14 +141,12 @@ O que foi preciso, com a causa de cada um:
 
 Problemas conhecidos, sendo resolvidos:
 
-- **Preto depois da tela de carregamento.** O New Game mostra a tela 3D de
-  carregamento e depois quadros pretos; a causa ainda não é conhecida.
-- **Os jobs de skinning são capturados em execução:** o `tools/lift_jobs.sh`
-  traduz os binários de job que um teste gravou, então um primeiro build
-  precisa antes de uma execução até o New Game com `SPU_DUMP_MISS` (veja
-  [Compilando](#compilando)).
-- **Entrada** só foi acionada pelo `PAD_SCRIPT`; um controle de verdade e o
-  teclado ainda não foram testados.
+- **Taxa de quadros.** Sendo medida e trabalhada (veja o ROADMAP).
+- **Só o começo da primeira fase foi jogado**; o resto do jogo não foi
+  testado.
+- **Teclado e mouse** não foram testados; o controle funciona.
+- Um teste headless parou uma vez enquanto carregava a fase (depois que o
+  `LoadRenderThreadProc` terminou); não se repetiu, não foi investigado.
 
 ## Como funciona
 
@@ -146,7 +165,7 @@ Problemas conhecidos, sendo resolvidos:
    (`spu_0001`, traduzido com o retorno de cada chamada como entrada, para os
    plugins voltarem para código traduzido) e 18 plugins de codec e DSP do
    FMOD (`spu_0002`–`spu_0019`). Os binários de job SPURS da cadeia de
-   skinning não são ELFs: um teste grava esses binários (`SPU_DUMP_MISS`) e o
+   skinning não são ELFs: `tools/extract_jobs.py` os extrai do EBOOT e o
    `tools/lift_jobs.sh` traduz (o job de skinning de 17.552 bytes
    `8B2B4776E3A079D8` e o job de 112 bytes ao lado dele, `37DA975A7C220171`).
 4. **Compilar** com CMake/Ninja contra o toolkit: o runtime (syscalls do
@@ -210,11 +229,10 @@ por exemplo `tools/rebuild.sh spu build`):
 | `spu` | `extract_spu_images.py` e `tools/lift_spu.sh` → `port/spu/` |
 | `build` | CMake (uma vez) + `tools/build.sh` → `build/BLUS30264/AfroSamuraiRecomp` |
 
-Os jobs de skinning ainda não estão no `rebuild.sh`: eles são capturados de
-uma execução. Depois do primeiro build, rode uma vez até o New Game com
-`SPU_DUMP_MISS=$PWD/cache/jobs` (o probe abaixo faz isso), depois
-`tools/lift_jobs.sh` e `tools/rebuild.sh build`. Sem eles o jogo para numa
-tela preta depois do New Game.
+A etapa `spu` também extrai os dois jobs crus conhecidos da cadeia de skinning
+diretamente do EBOOT descriptografado, valida SHA-256 e fingerprints do runtime
+e os traduz. Não é necessário capturá-los em execução. Para fazer só isso, use
+`tools/lift_jobs.sh`. Jobs adicionais ainda podem ser capturados com `SPU_DUMP_MISS`.
 
 A primeira compilação passa por muito código gerado e demora. Compile
 sempre pelo `tools/build.sh`: ele se recusa a começar enquanto outro Ninja

@@ -6,15 +6,14 @@ Status of the native Afro Samurai (`BLUS30264`) port to macOS/arm64 and what
 comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
 `[x]` = done and verified; `[ ]` = to do; "(in progress)" = being worked on.
 
-## Status at a glance (2026-11-06)
+## Status at a glance (2026-11-07)
 
-- **Main menu and New Game:** heaps and static constructors → SPURS (5
-  SPUs) and the game's threads → the save loaded → FMOD Ex audio up → the
-  logo and credit movies → the main menu over its background movie → New
-  Game → the 3D loading screen → black frames. Four 240-second headless runs
-  with scripted buttons in a row get there, with no crash.
-- **No gameplay seen yet:** the screen turns black after the loading
-  screen.
+- **Gameplay renders correctly:** boot → menus → New Game or Continue → the
+  3D loading screen → the opening cutscene and the combat tutorial, with
+  Afro, Ninja Ninja and the village textured and lit, played in a window
+  with a controller without a crash. RPCS3 on the same disc was the visual
+  reference.
+- **Next:** the frame rate, and playing further than the first minutes.
 - **Toolkit:** upstream ps3recomp v0.19.0 (`ae92407b`) plus this port's
   generic, env-gated changes, as one patch
   (`patches/ps3recomp-ae92407b-afro.patch`).
@@ -82,17 +81,21 @@ comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
   New Game spinning on a NULL; no "unresolved indirect call" in four runs.
 - [x] New Game reaches the 3D loading screen.
 
-## Next: into the first fight
+## Next: play it through, and make it fast
 
 ### Blockers
 
-- [ ] (in progress) **Black after the loading screen.** New Game shows the
-  3D "Loading..." screen and then black frames; find what the game waits on
-  or draws there.
+- [x] **Black, then exploded geometry after the loading screen.** Three
+  causes: vertex programs decompiled as if they started at slot 0 (branching
+  programs looped 16,384 times per vertex); the SPURS chain walker skipped
+  JOBLIST, so the 5 vertex-skinning jobs per frame never ran and the draws
+  read another writer's leftovers from the ring; and the skinning jobs' second
+  input pointed at the cache buffer in the older job context. All three fixed
+  (2026-11-07).
 - [ ] Watch the logs for more "unresolved indirect call" targets and add
   their tables to `tools/jumptables.txt` (or let the scan find them).
-- [ ] The skinning jobs cut out of the EBOOT or `ps3.psarc` at rebuild time,
-  so a first build does not need a run into New Game to capture them.
+- [x] The two known skinning-chain jobs extracted from the EBOOT at rebuild
+  time (`tools/extract_jobs.py`), verified byte-for-byte against runtime dumps.
 
 ### The menus, for real
 
