@@ -584,6 +584,169 @@ index 30290c73..fe39740a 100644
  s32 sys_prx_exitspawn_with_level(void);
  s32 sys_prx_get_module_id_by_name(const char* name, u64 flags, u32* id);
  
+diff --git a/libs/video/cellGcmSys.c b/libs/video/cellGcmSys.c
+index f073f327..5375b0e9 100644
+--- a/libs/video/cellGcmSys.c
++++ b/libs/video/cellGcmSys.c
+@@ -2731,6 +2731,17 @@ static void gcm_rsx_process_fifo_unlocked(void)
+                         ps3_ft_span(PS3_FT_SEMA, 0, s_sema_offset, v, s_ft_sema_t0, ps3_ft_now());
+                         s_ft_sema_t0 = 0;
+                     }
++                    if (m == 0x68u) {   /* GCM_SEMA_STATS: each distinct acquire offset, once */
++                        static int st = -1; if (st < 0) st = getenv("GCM_SEMA_STATS") ? 1 : 0;
++                        static u32 seen[32]; static u32 miss[32]; static int ns;
++                        if (st) { int k = 0; for (; k < ns; k++) if (seen[k] == s_sema_offset) break;
++                            if (k == ns && ns < 32) { seen[ns++] = s_sema_offset;
++                                fprintf(stderr, "[SEMA-ACQ] first acquire off=0x%X want=0x%08X label=0x%08X\n",
++                                        s_sema_offset, v, vm_read32(la)); }
++                            if (k < 32 && vm_read32(la) != v && (++miss[k] & (miss[k] - 1)) == 0)
++                                fprintf(stderr, "[SEMA-ACQ] off=0x%X unsatisfied x%u (want 0x%08X have 0x%08X)\n",
++                                        s_sema_offset, miss[k], v, vm_read32(la)); }
++                    }
+                     if (m == 0x64u)      s_sema_offset = v;
+                     else if (m == 0x6Cu) {
+                         /* The RSX has fetched past a RELEASE before its
+@@ -2768,6 +2779,20 @@ static void gcm_rsx_process_fifo_unlocked(void)
+                 extern unsigned long long ps3_ms_now(void);
+                 const unsigned long long now = ps3_ms_now();
+                 if (!b_t0 || b_off != s_sema_offset || b_val != v) { b_off = s_sema_offset; b_val = v; b_t0 = now; }
++                { static unsigned long long st_t0, st_last; static u32 st_n, st_give; static unsigned long long st_ms;
++                  /* GCM_SEMA_STATS=1: every 5 s, how many acquires blocked and for how long. */
++                  static int st_on = -1; if (st_on < 0) st_on = getenv("GCM_SEMA_STATS") ? 1 : 0;
++                  if (st_on) {
++                      if (b_t0 == now) st_n++;
++                      if (!st_t0) st_t0 = now;
++                      if (blk_ms && now - b_t0 >= blk_ms) st_give++;
++                      if (now - st_last >= 1) { st_ms += now - st_last > 50 ? 0 : now - st_last; }
++                      st_last = now;
++                      if (now - st_t0 >= 5000) {
++                          fprintf(stderr, "[SEMA-STATS] 5s: %u blocking acquires, ~%llu ms blocked, %u gave up\n",
++                                  st_n, st_ms, st_give);
++                          st_t0 = now; st_n = 0; st_give = 0; st_ms = 0; }
++                  } }
+                 if (!blk_ms || now - b_t0 < blk_ms) {
+                     if (PS3_FT_ON() && !s_ft_sema_t0) s_ft_sema_t0 = ps3_ft_now();
+                     sem_blocked = 1; break;
+diff --git a/libs/video/rsx_draw_engine.c b/libs/video/rsx_draw_engine.c
+index 19548e0a..180354ff 100644
+--- a/libs/video/rsx_draw_engine.c
++++ b/libs/video/rsx_draw_engine.c
+@@ -17,6 +17,7 @@
+ #include "rsx_restart_cuts.h"
+ #include "rsx_tiling.h"
+ #include "rsx_vertex_formats.h"
++#include "rsx_vertex_compact.h"
+ #include "rsx_vp_decompiler.h"
+ 
+ #include <stdio.h>
+@@ -2173,6 +2174,7 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
+      * identity only for a program that tests them. */
+     const int vp_branch_bits_used = !fixed && rsx_vp_uses_branch_bits(vp_uc, vp_instrs * 16u);
+     const u32 vp_branch_bits = vp_branch_bits_used ? rsx_dsp_reg(&g.rsx, 0x1FF8u) : 0;
++    const u32 vp_start = fixed ? 0 : rsx_dsp_vp_start(&g.rsx);
+     const u32 ucp = fixed ? 0 : eng_user_clip_key();
+     const u32 dbz = fixed ? 0 : s_dbz.unit;   /* eng_depth_bounds_prepare: unit + 1 */
+ 
+@@ -2238,6 +2240,9 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
+         key = eng_fnv1a(&fixed_tag, sizeof fixed_tag, key);
+     } else {
+         key = eng_vp_hash(vp_uc, vp_instrs * 16u, key);
++        /* Absolute branch targets are lowered relative to this start slot.
++         * Identical bytes at another start can generate different HLSL. */
++        key = eng_fnv1a(&vp_start, sizeof vp_start, key);
+         if (vp_branch_bits_used) key = eng_fnv1a(&vp_branch_bits, sizeof vp_branch_bits, key);
+         key = rsx_fp_structural_hash(fp_uc, fp_size, key);
+         if (!key) return 0;
+@@ -2288,6 +2293,14 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
+         snprintf(s_ps_hlsl, sizeof s_ps_hlsl, "%s", kEngFixedPS);
+     } else {
+         rsx_vp_set_branch_bits(vp_branch_bits);
++        /* Branch targets in the microcode are absolute VP slots; the program
++         * is decompiled from its start slot, so the decompiler needs that base
++         * (live draw sets it too). Without it every target past the start was
++         * a block that does not exist: the state machine never reached the
++         * output block and ran its full 16384-iteration bound PER VERTEX --
++         * Afro Samurai's in-game shaders took 0.4-3 s of GPU per frame and
++         * wrote no position. */
++        rsx_vp_set_branch_base(vp_start);
+         vi = rsx_vp_decompile_compact_ex(vp_uc, vp_instrs * 16u, vtex_mask,
+                                          layout->mask, s_vs_hlsl,
+                                          sizeof s_vs_hlsl);
+@@ -3141,6 +3154,33 @@ static void pd_note(const u32* targets, u32 n_targets, u32 zslot,
+             fprintf(s_pd.draws_log, " t%u %u:0x%08X f%02X %ux%u", u, t.location, t.offset,
+                     t.format & 0xFFu, t.width, t.height);
+         }
++        /* vertex streams: type/size/stride/location:offset and the first
++         * three elements of attribute 0 (position), decoded. */
++        { const u32 bo = rsx_dsp_vertex_data_base_offset(&g.rsx);
++          const u32 bi = rsx_dsp_vertex_data_base_index(&g.rsx);
++          fprintf(s_pd.draws_log, " | vb base %X/%u", bo, bi);
++          for (u32 a = 0; a < 16; a++) {
++              rsx_dsp_vertex_attr va; rsx_dsp_get_vertex_attr(&g.rsx, a, &va);
++              const u32 rawf = rsx_dsp_reg(&g.rsx, 0x1740u + a * 4u);
++              if (!va.type || !va.size) { if (rawf != 0x2u && rawf) fprintf(s_pd.draws_log, " a%u[raw %08X]", a, rawf); continue; }
++              fprintf(s_pd.draws_log, " a%u t%u s%u st%u %u:%X [%08X]", a, va.type, va.size,
++                      va.stride, va.location, va.offset, rawf);
++              if (a == 0 || a == 8) {
++                  const u32 off = rsx_dsp_resolve_vertex_offset(bo, va.offset);
++                  const u8* src = eng_guest_ptr(NULL, va.location, off, va.stride * 3u + 16u);
++                  if (src && a == 0) { fprintf(s_pd.draws_log, " raw");
++                      for (u32 w = 0; w < 16; w++) fprintf(s_pd.draws_log, " %02X%02X%02X%02X",
++                          src[w*4], src[w*4+1], src[w*4+2], src[w*4+3]); }
++                  for (u32 e = 0; src && e < 3; e++) {
++                      float f[4];
++                      if (rsx_vertex_decode_element(va.type, va.size, src + e * va.stride, f))
++                          fprintf(s_pd.draws_log, " (%g %g %g %g)", f[0], f[1], f[2], f[3]);
++                  }
++              }
++          }
++          rsx_dsp_index_array ia; rsx_dsp_get_index_array(&g.rsx, &ia);
++          fprintf(s_pd.draws_log, " | ib %u:%X u32=%u", ia.location, ia.offset, ia.is_u32);
++        }
+         fprintf(s_pd.draws_log, "\n");
+     }
+     if (s_pd.draws++) return;
+diff --git a/libs/video/rsx_fp_decompiler.c b/libs/video/rsx_fp_decompiler.c
+index 650f342a..8dd46fd8 100644
+--- a/libs/video/rsx_fp_decompiler.c
++++ b/libs/video/rsx_fp_decompiler.c
+@@ -522,11 +522,15 @@ static void fp_shadow_helper(Out* p, u32 unit, u32 cube_mask,
+     const char* cmp[] = { "0.0", "depth < reference", "depth == reference",
+         "depth <= reference", "depth > reference", "depth != reference",
+         "depth >= reference", "1.0" };
++    /* RSX_FP_SHADOW_ONE=1 (diagnostic): every depth comparison passes, i.e.
++     * nothing is in shadow -- to tell a wrong shadow map from wrong shading. */
++    static int s_shadow_one = -1;
++    if (s_shadow_one < 0) { const char* e = getenv("RSX_FP_SHADOW_ONE"); s_shadow_one = (e && *e == '1') ? 1 : 0; }
+     snprintf(text, sizeof text,
+         "float _rsx_shadow_cmp%u(float reference, float depth) { return (float)(%s); }\n"
+         "float4 _rsx_shadow%u(float3 coordinate) {\n"
+         "    float reference = saturate(coordinate.z);\n",
+-        unit, cmp[d->func], unit);
++        unit, s_shadow_one ? "1.0" : cmp[d->func], unit);
+     out_puts(p, text);
+     if (d->linear || d->unnormalized) {
+         snprintf(text, sizeof text, "    uint width, height; %s.GetDimensions(width, height);\n"
+diff --git a/libs/video/rsx_metal_backend.m b/libs/video/rsx_metal_backend.m
+index 0ba88a8c..4fbef301 100644
+--- a/libs/video/rsx_metal_backend.m
++++ b/libs/video/rsx_metal_backend.m
+@@ -4549,6 +4549,15 @@ static void eng_encode_and_commit(id<MTLTexture> present_dst)
+                     ps3_ft_span(PS3_FT_GPU_EXEC, s_ft_passes, s_ft_resolves | (s_ft_copies << 16),
+                                 present_dst ? 1u : 0u, w1 - (uint64_t)(gpu_s * 1e9), w1);
+             }
++            /* RSX_GPU_SLOW_MS=<ms>: name command buffers whose GPU execution
++             * takes longer than that, with how many records they carried. */
++            { static double lim = -1;
++              if (lim < 0) { const char* e = getenv("RSX_GPU_SLOW_MS"); lim = e ? atof(e) / 1000.0 : 0; }
++              if (lim > 0) { const double g = [cb GPUEndTime] - [cb GPUStartTime];
++                  static int n;
++                  if (g > lim && PS3_LOG_FIRST(n, 200))
++                      fprintf(stderr, "[rsx gpu-slow] %.0f ms GPU, %u records, present=%d\n",
++                              g * 1000.0, ft_nrec, present_dst ? 1 : 0); } }
+             s_eng_checked_completed = [cb status] == MTLCommandBufferStatusCompleted &&
+                                       ![cb error] && !s_eng_dropped && !s_eng_encoding_failed;
+             if (!s_eng_checked_completed) s_eng_encoding_failed = 1;
 diff --git a/runtime/ppu/ppu_fs.cpp b/runtime/ppu/ppu_fs.cpp
 index 37e37454..dcd4a947 100644
 --- a/runtime/ppu/ppu_fs.cpp
