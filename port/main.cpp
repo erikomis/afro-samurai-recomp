@@ -523,6 +523,20 @@ static void afro_defaults(void)
      *     without them it halted on its guard every run, and a run whose
      *     garbage passed PUT its local store over the PPU text at 0x10000. */
     setenv("SPURS_JOB_CTX_V1", "1", 0);
+    /* Frame pacing (30 fps). The title prepares each frame with
+     * cellGcmSetPrepareFlip, folds the returned buffer id into its frame-ready
+     * label, flips it from its vblank handler every 2nd vblank with
+     * cellGcmSetFlipImmediate, and its flip handler frees the label the RSX
+     * ACQUIREs before going on. Prepare-as-flip with the handler at call time
+     * and a non-blocking ACQUIRE let it run ~45-48 frames a second (1.5x).
+     *   GCM_PREPAREFLIP_FIFO=2  prepare returns the buffer id and does not flip
+     *   GCM_FLIPCB_ONTICK=1     flip handler at completion, after the vblank
+     *                           handler has recorded which buffer it flipped
+     *   GCM_SEMA_ACQUIRE=1      the RSX waits on ACQUIRE (bounded, below) */
+    setenv("GCM_PREPAREFLIP_FIFO", "2", 0);
+    setenv("GCM_FLIPCB_ONTICK", "1", 0);
+    setenv("GCM_SEMA_ACQUIRE", "1", 0);
+    setenv("GCM_SEMA_ACQUIRE_MS", "250", 0);
 }
 
 int main(int argc, char** argv)
