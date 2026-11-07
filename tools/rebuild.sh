@@ -62,7 +62,8 @@ for s in $steps; do
     spu)
         say "spu"
         "$PY" "$PS3RECOMP_DIR/tools/extract_spu_images.py" "$E" -o "$AFRO_ANALYSIS/spu"
-        "$here/lift_spu.sh" ;;
+        "$here/lift_spu.sh"
+        "$here/lift_jobs.sh" ;;
     build)
         say "build"
         if [ ! -f "$AFRO_BUILD/build.ninja" ]; then

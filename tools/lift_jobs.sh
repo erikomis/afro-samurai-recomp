@@ -8,7 +8,8 @@
 # it: the skinning chain then never completes a job, and a game started from
 # the menu sits on a black screen.
 #
-# Input: cache/jobs/spujob_<fingerprint>_<size>.bin, written by a run with
+# Input: known jobs extracted from AFRO_EBOOT by extract_jobs.py, plus
+# cache/jobs/spujob_<fingerprint>_<size>.bin written by a run with
 # SPU_DUMP_MISS=$AFRO_ROOT/cache/jobs (enter New Game from the menu so the
 # skinning chain dispatches them). Seen so far:
 #   8B2B4776E3A079D8  17552 bytes  NTG SPU skinning job
@@ -18,6 +19,8 @@
 # code) and port/spu/jobmods_register.c (fingerprints and names only).
 set -e
 here=${0:A:h}; source "$here/env.sh"
+# Bootstrap the known jobs directly from the disc executable.
+"$PY" "$here/extract_jobs.py" "$AFRO_EBOOT" -o "$AFRO_ROOT/cache/jobs"
 "$PY" - "$AFRO_ROOT" "$PS3RECOMP_DIR" <<'PYEOF'
 import glob, os, re, subprocess, sys
 root, kit = sys.argv[1], sys.argv[2]
