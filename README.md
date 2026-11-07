@@ -11,8 +11,8 @@ graphics on Metal. It is not an emulator.
 through the logo movies, the main menu and New Game (or Continue), the first
 level plays in a window with a controller: Afro, Ninja Ninja and the village
 are drawn textured and lit, and the opening cutscene and the combat tutorial
-run. It has been played in a window without a crash; the frame rate and a
-longer play-through are what is being looked at now. See [Status](#status).
+run. It has been played in a window without a crash; it runs about 1.5x too
+fast and the in-game audio sounds wrong, which is what is being fixed now. See [Status](#status).
 
 | | |
 | --- | --- |
@@ -27,8 +27,8 @@ and the tools of the author's other ports
 
 > [!WARNING]
 > **Early work in progress.** The first level is playable, but only its
-> start has been played, and the frame rate is still being measured and
-> worked on. There are no releases: you build the game yourself from your own
+> start has been played, it runs about 1.5x too fast, and the in-game audio
+> sounds wrong. There are no releases: you build the game yourself from your own
 > disc. Apple-silicon macOS only. What is missing is in
 > [ROADMAP.md](ROADMAP.md).
 
@@ -135,7 +135,15 @@ What it took, with the cause of each:
 
 Known issues, being worked on:
 
-- **Frame rate.** Being measured and worked on (see the ROADMAP).
+- **Runs about 1.5x too fast, and the in-game audio sounds wrong.** In
+  gameplay the title prepares ~45-48 frames a second in headless runs; the
+  PS3 (and RPCS3) run it at 30, so the game logic runs ~1.5x real speed.
+  The audio is likely the same pacing problem, not yet confirmed. Cause
+  found, fix in progress: the title paces itself with libgcm's prepare-flip
+  plus flip-immediate scheme (the buffer id returned by
+  `cellGcmSetPrepareFlip`, a flip handler that frees the display buffer the
+  RSX waits on), and the toolkit's HLE completed the flip at call time, so
+  nothing held the render loop (see the ROADMAP).
 - **Only the start of the first level has been played**; the rest of the
   game is untested.
 - **Keyboard and mouse** have not been tested; a controller works.

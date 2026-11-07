@@ -11,8 +11,9 @@ gráficos em Metal. Não é um emulador.
 pelos vídeos de logo, pelo menu principal e pelo New Game (ou Continue), a
 primeira fase roda numa janela com controle: o Afro, o Ninja Ninja e a vila
 aparecem com textura e iluminação, e a cutscene de abertura e o tutorial de
-combate rodam. Já foi jogado numa janela sem crash; a taxa de quadros e uma
-partida mais longa são o que está sendo visto agora. Veja [Estado](#estado).
+combate rodam. Já foi jogado numa janela sem crash; ele roda cerca de 1,5x
+depressa demais e o áudio dentro do jogo soa errado, que é o que está sendo
+corrigido agora. Veja [Estado](#estado).
 
 | | |
 | --- | --- |
@@ -27,8 +28,8 @@ organização e as ferramentas dos outros ports do mesmo autor
 
 > [!WARNING]
 > **Trabalho em andamento, no começo.** A primeira fase é jogável, mas só o
-> começo dela foi jogado, e a taxa de quadros ainda está sendo medida e
-> trabalhada. Não há releases: você mesmo compila o jogo a partir do seu
+> começo dela foi jogado, ele roda cerca de 1,5x depressa demais e o áudio
+> dentro do jogo soa errado. Não há releases: você mesmo compila o jogo a partir do seu
 > disco. Só macOS com Apple silicon. O que falta está no
 > [ROADMAP.pt-BR.md](ROADMAP.pt-BR.md).
 
@@ -141,7 +142,16 @@ O que foi preciso, com a causa de cada um:
 
 Problemas conhecidos, sendo resolvidos:
 
-- **Taxa de quadros.** Sendo medida e trabalhada (veja o ROADMAP).
+- **Roda cerca de 1,5x depressa demais, e o áudio dentro do jogo soa
+  errado.** Na gameplay o título prepara ~45-48 quadros por segundo nos
+  testes headless; o PS3 (e o RPCS3) rodam a 30, então a lógica do jogo roda
+  a ~1,5x a velocidade real. O áudio provavelmente é o mesmo problema de
+  ritmo, ainda não confirmado. Causa encontrada, correção em andamento: o
+  título dita o próprio ritmo com o esquema prepare-flip + flip-immediate da
+  libgcm (o id de buffer devolvido por `cellGcmSetPrepareFlip`, um flip
+  handler que libera o buffer de exibição que o RSX espera), e o HLE do
+  toolkit completava o flip na hora da chamada, então nada segurava o laço de
+  renderização (veja o ROADMAP).
 - **Só o começo da primeira fase foi jogado**; o resto do jogo não foi
   testado.
 - **Teclado e mouse** não foram testados; o controle funciona.
