@@ -13,18 +13,19 @@ vem a seguir. Mesma organização dos roadmaps do inFAMOUS 2 e dos Resistance.
   de combate, com o Afro, o Ninja Ninja e a vila com textura e iluminação,
   jogado numa janela com controle sem crash. O RPCS3 com o mesmo disco foi a
   referência visual.
-- **Bloqueio atual:** a gameplay roda ~1,5x depressa demais (~45-48 quadros
-  por segundo contra os 30 do PS3) e o áudio dentro do jogo soa errado,
-  provavelmente o mesmo problema de ritmo (não confirmado). Causa
-  encontrada, correção em andamento: o título dita o próprio ritmo com o
-  esquema prepare-flip + flip-immediate da libgcm (usa o id de buffer
-  devolvido por `cellGcmSetPrepareFlip`; o flip handler libera o buffer de
-  exibição que o RSX espera), mas o HLE do toolkit completava o flip na hora
-  da chamada e devolvia 0, e o RSX não bloqueia no `SEMAPHORE_ACQUIRE` por
-  padrão, então nada segurava o laço de renderização.
-- **Próximo:** entregar a correção do ritmo de flip (30 quadros por segundo
-  na gameplay, áudio conferido contra o RPCS3), depois jogar além dos
-  primeiros minutos.
+- **Ritmo de quadros corrigido:** a gameplay roda a 30 quadros por segundo
+  como o PS3 e o RPCS3 (29,5-30,1 medidos em 260 s, teste headless de New
+  Game até o tutorial de combate; eram ~45-48). O título dita o próprio
+  ritmo com o esquema prepare-flip + flip-immediate da libgcm; o HLE do
+  toolkit agora devolve o id real do buffer em `cellGcmSetPrepareFlip`,
+  roda o flip handler no flip e bloqueia o RSX no `SEMAPHORE_ACQUIRE`
+  (limite de 250 ms).
+- **Bloqueio atual:** nenhum conhecido. O áudio dentro do jogo precisa ser
+  conferido de ouvido: a taxa de mixagem do cellAudio estava em 187,5
+  blocos/s (correta) antes e depois, então o som estranho deve ter sido a
+  aceleração.
+- **Próximo:** confirmar o áudio de ouvido, depois jogar além dos primeiros
+  minutos.
 - **Toolkit:** ps3recomp v0.19.0 do upstream (`ae92407b`) mais as mudanças
   genéricas deste port, controladas por variáveis de ambiente, num patch só
   (`patches/ps3recomp-ae92407b-afro.patch`).
@@ -142,12 +143,14 @@ vem a seguir. Mesma organização dos roadmaps do inFAMOUS 2 e dos Resistance.
 
 ### Desempenho
 
-- [ ] (em andamento) A correção do ritmo de flip: ids reais do prepare-flip,
-  o flip handler rodando no flip, o RSX esperando o buffer de exibição; 30
-  quadros por segundo na gameplay e o áudio dentro do jogo conferido contra
-  o RPCS3.
-- [ ] 30 fps estáveis com frame pacing regular (o alvo do jogo no PS3),
-  medidos com tempos de quadro p95/p99; perfilar CPU, SPU, GPU, compilação de
+- [x] A correção do ritmo de flip: ids reais do prepare-flip, o flip handler
+  rodando no flip, o RSX esperando o buffer de exibição
+  (`GCM_PREPAREFLIP_FIFO=2`, `GCM_FLIPCB_ONTICK=1`, `GCM_SEMA_ACQUIRE=1`).
+  Gameplay a 29,5-30,1 quadros por segundo em 260 s, nenhum acquire estourou
+  o limite.
+- [ ] O áudio dentro do jogo conferido de ouvido contra o RPCS3.
+- [ ] 30 fps estáveis com frame pacing regular (o alvo do jogo no PS3; a média
+  já foi atingida), medidos com tempos de quadro p95/p99; perfilar CPU, SPU, GPU, compilação de
   shaders e streaming.
 - [ ] O cache de tradução de shaders e a compilação de pipelines em segundo
   plano dos outros ports, para shaders vistos pela primeira vez não

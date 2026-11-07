@@ -13,16 +13,17 @@ comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
   Afro, Ninja Ninja and the village textured and lit, played in a window
   with a controller without a crash. RPCS3 on the same disc was the visual
   reference.
-- **Current blocker:** gameplay runs ~1.5x too fast (~45-48 frames a second
-  against the PS3's 30) and the in-game audio sounds wrong, likely the same
-  pacing problem (not confirmed). Cause found, fix in progress: the title
-  paces itself with libgcm's prepare-flip + flip-immediate scheme (it uses
-  the buffer id returned by `cellGcmSetPrepareFlip`; its flip handler frees
-  the display buffer the RSX waits on), but the toolkit's HLE completed the
-  flip at call time and returned 0, and the RSX does not block on
-  `SEMAPHORE_ACQUIRE` by default, so nothing held the render loop.
-- **Next:** land the flip-pacing fix (30 frames a second in gameplay, audio
-  checked against RPCS3), then playing further than the first minutes.
+- **Frame pacing fixed:** gameplay runs at 30 frames a second like the PS3
+  and RPCS3 (29.5-30.1 measured over 260 s, headless New Game run to the
+  combat tutorial; it was ~45-48). The title paces itself with libgcm's
+  prepare-flip + flip-immediate scheme; the toolkit's HLE now returns the
+  real buffer id from `cellGcmSetPrepareFlip`, runs the flip handler at the
+  flip and blocks the RSX on `SEMAPHORE_ACQUIRE` (250 ms bound).
+- **Current blocker:** none known. The in-game audio needs a listening
+  check: the cellAudio mix rate was 187.5 blocks/s (correct) before and
+  after, so the odd sound is expected to have been the speed-up.
+- **Next:** confirm the audio by ear, then playing further than the first
+  minutes.
 - **Toolkit:** upstream ps3recomp v0.19.0 (`ae92407b`) plus this port's
   generic, env-gated changes, as one patch
   (`patches/ps3recomp-ae92407b-afro.patch`).
@@ -136,11 +137,13 @@ comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
 
 ### Performance
 
-- [ ] (in progress) The flip-pacing fix: real prepare-flip ids, the flip
-  handler run at the flip, the RSX waiting on the display buffer; 30 frames
-  a second in gameplay and the in-game audio checked against RPCS3.
-- [ ] A steady 30 fps with even frame pacing (the game's target on PS3),
-  measured with p95/p99 frame times; profile CPU, SPU, GPU, shader builds and
+- [x] The flip-pacing fix: real prepare-flip ids, the flip handler run at
+  the flip, the RSX waiting on the display buffer (`GCM_PREPAREFLIP_FIFO=2`,
+  `GCM_FLIPCB_ONTICK=1`, `GCM_SEMA_ACQUIRE=1`). Gameplay at 29.5-30.1 frames
+  a second over 260 s, no acquire timed out.
+- [ ] The in-game audio checked by ear against RPCS3.
+- [ ] A steady 30 fps with even frame pacing (the game's target on PS3;
+  the average is reached), measured with p95/p99 frame times; profile CPU, SPU, GPU, shader builds and
   streaming.
 - [ ] The shader translation cache and background pipeline builds from the
   other ports, so first-seen shaders do not hitch.
