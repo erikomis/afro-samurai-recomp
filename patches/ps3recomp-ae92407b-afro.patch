@@ -31,7 +31,7 @@ index 49e13905..24f12d08 100644
  s32 cellKbSetReadMode(u32 port_no, u32 rmode);
  s32 cellKbSetCodeType(u32 port_no, u32 codetype);
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index b09220e2..4e80c80b 100644
+index b09220e2..ff0ef6fc 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
 @@ -2890,11 +2890,30 @@ s32 cellSpursJobGuardReset(u64 guard_ea)
@@ -145,16 +145,52 @@ index b09220e2..4e80c80b 100644
                  return;
              }
              if (ext == (7 | (14 << 3))) {                     /* RET */
-@@ -3051,7 +3122,7 @@ static void jc_execute(u32 entry_ea, u32 jc_ea, u32 size_desc)
+@@ -3051,11 +3122,42 @@ static void jc_execute(u32 entry_ea, u32 jc_ea, u32 size_desc)
          }
          if (op == 7 && ext == (7 | (1 << 3))) {           /* GUARD */
              u32 g_ea = (u32)(cmd & ~127ull);
 -            if (!jg_wait(g_ea)) return;                  /* still closed */
 +            if (!jg_wait(g_ea, jc_ea)) return;           /* still closed */
++            pc += 8; continue;
++        }
++        /* JOBLIST(6): the command points at a CellSpursJobList
++         * { be u32 numJobs; be u32 sizeOfJob; be u64 eaJobList } and the
++         * chain runs those jobs in order, as if they were JOB commands. This
++         * used to be skipped as a no-op. Afro Samurai builds every frame's lap
++         * of its skinning chain as [JOB palette] -> [JOBLIST of the vertex
++         * skinning jobs] -> [JOB lap notify] -> END; with the list skipped, the
++         * skinned vertices (in-out DMA straight into the RSX-visible ring) were
++         * never written and the stride-24 draws read whatever the ring held
++         * before: the exploded geometry in play. SPURS_JC_JOBLIST=0 skips the
++         * list again (for comparison). */
++        if (op == 6) {
++            static int s_jl = -1;
++            if (s_jl < 0) { const char* e = getenv("SPURS_JC_JOBLIST"); s_jl = (e && e[0] == '0') ? 0 : 1; }
++            const u32 l   = (u32)(cmd & ~7ull);
++            const u32 n   = vm_read32(l);
++            const u32 sz  = vm_read32(l + 4);
++            const u32 ea  = (u32)vm_read64(l + 8);
++            { static int _n = 0; if (PS3_LOG_FIRST(_n, 12))
++                fprintf(stderr, "[cellSpurs] chain 0x%08X: JOBLIST @0x%08X numJobs=%u sizeOfJob=%u "
++                                "eaJobList=0x%08X%s\n", jc_ea, l, n, sz, ea, s_jl ? "" : " (skipped)"); }
++            if (s_jl && ea && sz >= 64 && n <= 4096) {
++                for (u32 i = 0; i < n; i++) {
++                    { extern u32 g_spurs_job_ls_handle; g_spurs_job_ls_handle = jc_ea; }
++                    int idx = jobs++;
++                    jc_run_one_job(ea + i * sz, idx, sz);
++                    jc_signal_done(jc_ea, idx);
++                }
++                idle = 0;
++            }
              pc += 8; continue;
          }
          /* NOP(0) / SYNC+LWSYNC(2, one virtual SPU: nothing to wait for) /
-@@ -3766,6 +3837,76 @@ s32 _cellSpursLFQueueInitialize(u64 owner_ea, u64 queue_ea, u64 buffer_ea,
+-         * FLUSH(5) / JOBLIST(6, nested arrays TODO) / SET_LABEL */
++         * FLUSH(5) / SET_LABEL */
+         pc += 8;
+     }
+     printf("[cellSpurs] chain 0x%08X: 4096 commands with no job run after %d "
+@@ -3766,6 +3868,76 @@ s32 _cellSpursLFQueueInitialize(u64 owner_ea, u64 queue_ea, u64 buffer_ea,
      return CELL_OK;
  }
  
@@ -1254,10 +1290,25 @@ index f922b745..803212b6 100644
   * The guest names its wait object in the WAIT_SIGNAL argument, and for YDKJ`s
   * CRI tasks the flag the PPU sets is exactly wait_obj + 0x80 -- so a Set can
 diff --git a/runtime/spu/spurs_job.c b/runtime/spu/spurs_job.c
-index 9beb8932..bc53ef26 100644
+index 9beb8932..aac0b15b 100644
 --- a/runtime/spu/spurs_job.c
 +++ b/runtime/spu/spurs_job.c
-@@ -241,7 +241,8 @@ int spu_run_spurs_job(spu_lifted_entry_fn entry, int image_id,
+@@ -226,10 +226,14 @@ int spu_run_spurs_job(spu_lifted_entry_fn entry, int image_id,
+ 
+     /* ---- input DMA list -> ioBuffer, each entry 16-byte aligned ---------- */
+     uint32_t io_cur = io_ls, io_used = 0;
++    /* Where each input lands, for the older context's per-buffer pointer
++     * array (SPURS_JOB_CTX_V1 below). */
++    uint32_t in_ls[26] = { 0 };
+     for (uint32_t i = 0; i < n_dma; i++) {
+         uint64_t e   = g64(dma_base + i * 8u);
+         uint32_t sz  = (uint32_t)((e >> 32) & 0x7FFFu);
+         uint32_t eal = (uint32_t)e;
++        if (i < 26) in_ls[i] = io_cur;
+         if (!sz || !eal) continue;
+         if (!io_ls || io_cur + sz > SPU_LS_SIZE) break;
+         memcpy(ls + io_cur, vm_base + eal, sz);
+@@ -241,7 +245,8 @@ int spu_run_spurs_job(spu_lifted_entry_fn entry, int image_id,
       * jm2 keeps these in its own bss (outside job memory); we load the job at
       * LS 0, so the top of LS is the equivalent free space. */
      uint32_t desc_ls = SPU_LS_SIZE - 0x400;     /* descriptors are <= 1024 B */
@@ -1267,7 +1318,7 @@ index 9beb8932..bc53ef26 100644
      uint32_t dsz     = job_desc_size ? job_desc_size : 256u;
      if (dsz > 0x400) dsz = 0x400;
      if (p > ctx_ls)
-@@ -284,6 +285,27 @@ int spu_run_spurs_job(spu_lifted_entry_fn entry, int image_id,
+@@ -284,6 +289,35 @@ int spu_run_spurs_job(spu_lifted_entry_fn entry, int image_id,
      ls32(ls, ctx_ls + JC_DMA_TAG,  JOB_DMA_TAG);
      ls32(ls, ctx_ls + JC_EA_JOB_DESCRIPTOR,     0);
      ls32(ls, ctx_ls + JC_EA_JOB_DESCRIPTOR + 4, job_ea);
@@ -1280,10 +1331,18 @@ index 9beb8932..bc53ef26 100644
 +     * descriptor: tag = an EA, so every run halted at 0x1D4, and the odd run
 +     * whose garbage passed the guard PUT its whole local store to EA 0,
 +     * overwriting the PPU text (and the switch tables in it) from 0x10000.
-+     * The pointer array matches Context2 for one input buffer (ioBuffer at
-+     * +0, cacheBuffer[i] at +4+4i); only more inputs would need per-entry
-+     * pointers, which no job seen so far uses. */
-+    if (ps3_env_once("SPURS_JOB_CTX_V1")) {
++     * The pointer array is one LS pointer per input buffer, then one per
++     * cache buffer: for a single input it matches Context2 (ioBuffer at +0,
++     * cacheBuffer[i] at +4+4i), but the skinning jobs Afro Samurai queues in
++     * a JOBLIST carry two inputs, and with input 1's slot holding the cache
++     * buffer they skinned from the wrong data (the shards in cutscenes). */
++    { const char* v1 = ps3_env_once("SPURS_JOB_CTX_V1");
++      if (v1 && *v1 == '1') {
++        uint32_t k = 0;
++        for (uint32_t i = 0; i < n_dma && k < 26; i++, k++)
++            ls32(ls, ctx_ls + k * 4u, in_ls[i]);
++        for (uint32_t j = 0; j < n_cache && j < 4 && k < 26; j++, k++)
++            ls32(ls, ctx_ls + k * 4u, cache_ls[j]);
 +        ls16(ls, ctx_ls + 0x68, (uint16_t)n_dma);
 +        ls16(ls, ctx_ls + 0x6A, (uint16_t)n_cache);
 +        ls32(ls, ctx_ls + 0x6C, out_ls);
@@ -1291,7 +1350,7 @@ index 9beb8932..bc53ef26 100644
 +        ls32(ls, ctx_ls + 0x74, JOB_DMA_TAG);
 +        ls32(ls, ctx_ls + 0x78, 0);
 +        ls32(ls, ctx_ls + 0x7C, job_ea);
-+    }
++    } }
  
      { static int _n = 0;
        if (PS3_LOG_FIRST(_n, 4))
