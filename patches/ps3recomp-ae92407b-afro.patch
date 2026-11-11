@@ -1082,10 +1082,28 @@ index 650f342a..8dd46fd8 100644
      if (d->linear || d->unnormalized) {
          snprintf(text, sizeof text, "    uint width, height; %s.GetDimensions(width, height);\n"
 diff --git a/libs/video/rsx_metal_backend.m b/libs/video/rsx_metal_backend.m
-index 0ba88a8c..4fbef301 100644
+index 0ba88a8c..c380c054 100644
 --- a/libs/video/rsx_metal_backend.m
 +++ b/libs/video/rsx_metal_backend.m
-@@ -4549,6 +4549,15 @@ static void eng_encode_and_commit(id<MTLTexture> present_dst)
+@@ -887,6 +887,17 @@ static int create_window_impl(const char* title)
+     window_close_observer_start(s_window);
+ 
+     [s_window setTitle:[NSString stringWithUTF8String:(title ? title : "ps3recomp")]];
++    /* PS3_APP_ICON=<png or icns>: this process's Dock icon. A bare executable
++     * shows the generic one; a launcher passes an icon drawn from the player's
++     * own disc (ICON0.PNG), so nothing of the game ships with the build. */
++    {
++        const char* icon = getenv("PS3_APP_ICON");
++        if (icon && *icon) {
++            NSImage* img = [[NSImage alloc] initWithContentsOfFile:[NSString stringWithUTF8String:icon]];
++            if (img) [NSApp setApplicationIconImage:img];
++            else fprintf(stderr, "[RSX metal] PS3_APP_ICON=%s: not an image\n", icon);
++        }
++    }
+     [s_window center];
+ 
+     /* A window handed over by the executable that spawned this one (see
+@@ -4549,6 +4560,15 @@ static void eng_encode_and_commit(id<MTLTexture> present_dst)
                      ps3_ft_span(PS3_FT_GPU_EXEC, s_ft_passes, s_ft_resolves | (s_ft_copies << 16),
                                  present_dst ? 1u : 0u, w1 - (uint64_t)(gpu_s * 1e9), w1);
              }
