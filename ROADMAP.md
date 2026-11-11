@@ -282,4 +282,5 @@ a port bug and a bug of the original game are different things.
   toolkit patch, README, the license and a `.gitignore` that blocks game
   data, firmware, keys and saves.
 - [x] `CREDITS.md` (en + pt-BR).
-- [ ] The repository published on GitHub (the owner's call).
+- [x] The repository published on GitHub:
+  [erikomis/afro-samurai-recomp](https://github.com/erikomis/afro-samurai-recomp).

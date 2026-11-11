@@ -20,6 +20,9 @@ segundo como o PS3, e o áudio dentro do jogo agora soa certo. Veja
 | [<img src="docs/screenshots/03-gameplay-village.png" width="420" alt="Afro de costas, espada na mão, na vila ao entardecer">](docs/screenshots/03-gameplay-village.png)<br>Gameplay: o Afro na vila | [<img src="docs/screenshots/04-ninja-ninja.png" width="420" alt="Ninja Ninja encostado numa árvore perto de uma lanterna acesa">](docs/screenshots/04-ninja-ninja.png)<br>Ninja Ninja |
 | [<img src="docs/screenshots/01-main-menu.png" width="420" alt="Menu principal: Continue, New Game, Options, Treasures">](docs/screenshots/01-main-menu.png)<br>O menu principal | [<img src="docs/screenshots/02-loading.png" width="420" alt="A tela 3D de carregamento depois do New Game">](docs/screenshots/02-loading.png)<br>New Game: a tela de carregamento |
 
+O código está em [github.com/erikomis/afro-samurai-recomp](https://github.com/erikomis/afro-samurai-recomp); problemas e
+relatos vão para as [issues](https://github.com/erikomis/afro-samurai-recomp/issues).
+
 Construído sobre o [ps3recomp](https://github.com/sp00nznet/ps3recomp), com a
 organização e as ferramentas dos outros ports do mesmo autor
 ([inFAMOUS 2](https://github.com/erikomis/infamous2-recomp),
@@ -197,7 +200,7 @@ Problemas conhecidos, sendo resolvidos:
   alpha saem certos nos 83 draws despejados; a grama aparece como lâminas na
   cutscene), mas a conferência final da grama do pátio numa sessão em janela
   está pendente. Outras texturas quebradas podem restar e ainda não foram
-  reportadas.
+  reportadas: abra uma [issue](https://github.com/erikomis/afro-samurai-recomp/issues) com uma captura de tela.
 - **Texturas em streaming** podem ficar desatualizadas: o cache de texturas
   só calcula o hash da textura inteira a cada 8 quadros, o que é suspeito
   (não confirmado) para texturas que chegam por streaming;
@@ -272,6 +275,8 @@ brew install cmake ninja sdl2 glslang spirv-cross spirv-tools ffmpeg python@3.12
 ### Preparando
 
 ```sh
+git clone https://github.com/erikomis/afro-samurai-recomp.git
+cd afro-samurai-recomp
 tools/setup.sh              # toolkit, venv do Python, chaves; não compila
 tools/setup.sh --check      # só confere
 ```

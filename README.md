@@ -20,6 +20,9 @@ second like the PS3, and the in-game audio now sounds right. See
 | [<img src="docs/screenshots/03-gameplay-village.png" width="420" alt="Afro from behind, sword drawn, in the village at dusk">](docs/screenshots/03-gameplay-village.png)<br>Gameplay: Afro in the village | [<img src="docs/screenshots/04-ninja-ninja.png" width="420" alt="Ninja Ninja leaning against a tree by a lit lantern">](docs/screenshots/04-ninja-ninja.png)<br>Ninja Ninja |
 | [<img src="docs/screenshots/01-main-menu.png" width="420" alt="Main menu: Continue, New Game, Options, Treasures">](docs/screenshots/01-main-menu.png)<br>The main menu | [<img src="docs/screenshots/02-loading.png" width="420" alt="The 3D loading screen after New Game">](docs/screenshots/02-loading.png)<br>New Game: the loading screen |
 
+The code is at [github.com/erikomis/afro-samurai-recomp](https://github.com/erikomis/afro-samurai-recomp); problems and
+reports go to its [issues](https://github.com/erikomis/afro-samurai-recomp/issues).
+
 Built on [ps3recomp](https://github.com/sp00nznet/ps3recomp), with the layout
 and the tools of the author's other ports
 ([inFAMOUS 2](https://github.com/erikomis/infamous2-recomp),
@@ -187,7 +190,8 @@ Known issues, being worked on:
   texture fixes above were checked in headless runs (alpha registers read
   right on all 83 dumped draws; grass renders as blades in the cutscene),
   but the final look at the courtyard grass in a windowed session is
-  pending. Other broken textures may remain and have not been reported yet.
+  pending. Other broken textures may remain and have not been reported yet:
+  please open an [issue](https://github.com/erikomis/afro-samurai-recomp/issues) with a screenshot.
 - **Streamed textures** may be stale: the texture cache hashes the full
   texture only every 8 frames, which is suspected (not confirmed) for
   textures that stream in; `PS3RECOMP_ENG_TEXHASH_FULL=1` tests it.
@@ -259,6 +263,8 @@ brew install cmake ninja sdl2 glslang spirv-cross spirv-tools ffmpeg python@3.12
 ### Setting up
 
 ```sh
+git clone https://github.com/erikomis/afro-samurai-recomp.git
+cd afro-samurai-recomp
 tools/setup.sh              # toolkit, Python venv, keys; no build
 tools/setup.sh --check      # only validate
 ```
