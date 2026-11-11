@@ -537,6 +537,11 @@ static void afro_defaults(void)
     setenv("GCM_FLIPCB_ONTICK", "1", 0);
     setenv("GCM_SEMA_ACQUIRE", "1", 0);
     setenv("GCM_SEMA_ACQUIRE_MS", "250", 0);
+    /* GCM_ENGINE_3D_SUBCH  the title's 2D blits (NV3089 on subchannel 5) must
+     *     not reach the draw engine's NV4097 register file: their 0x0304-
+     *     0x030C words switched the alpha test off, and grass and foliage
+     *     cards drew as dark rectangles. */
+    setenv("GCM_ENGINE_3D_SUBCH", "1", 0);
 }
 
 int main(int argc, char** argv)

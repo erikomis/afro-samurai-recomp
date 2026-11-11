@@ -1,3 +1,68 @@
+diff --git a/libs/audio/cellAudio.c b/libs/audio/cellAudio.c
+index f231ea26..78b83873 100644
+--- a/libs/audio/cellAudio.c
++++ b/libs/audio/cellAudio.c
+@@ -516,6 +516,20 @@ static void audio_mix_one_block(void)
+                 left = right = ld_be_f32(&src[s]) * level;
+             }
+ 
++            /* PS3_AUDIO_DOWNMIX=itu: the ITU-R BS.775 stereo fold-down --
++             * centre and surround at -3 dB (side and back averaged into one
++             * surround pair), LFE dropped -- instead of the sum below, which
++             * adds the LFE to both sides and both surround pairs at 0.8. */
++            static int itu = -1;
++            if (itu < 0) { const char* e = getenv("PS3_AUDIO_DOWNMIX"); itu = e && !strcmp(e, "itu"); }
++            if (nch == 8 && itu) {
++                const float* q = &src[s * 8];
++                const float c  = ld_be_f32(&q[2]) * level * 0.7071f;
++                const float sl = (ld_be_f32(&q[4]) + ld_be_f32(&q[6])) * level * 0.5f * 0.7071f;
++                const float sr = (ld_be_f32(&q[5]) + ld_be_f32(&q[7])) * level * 0.5f * 0.7071f;
++                left  += c + sl;
++                right += c + sr;
++            } else
+             /* If 7.1, mix center and other channels into stereo */
+             if (nch == 8) {
+                 float center = ld_be_f32(&src[s * 8 + 2]) * level * 0.707f;
+@@ -531,6 +545,24 @@ static void audio_mix_one_block(void)
+             s_mix_buffer[s * 2 + 0] += left;
+             s_mix_buffer[s * 2 + 1] += right;
+         }
++        /* AUDIO_RAW8=<file> (diagnostic): port 0's interleaved channels as
++         * host-endian floats, for an offline downmix comparison. */
++        { static FILE* rf = (FILE*)-1;
++          if (rf == (FILE*)-1) { const char* e = getenv("AUDIO_RAW8"); rf = e ? fopen(e, "wb") : NULL; }
++          if (rf && p == 0 && nch == 8) {
++              float tmp[CELL_AUDIO_BLOCK_SAMPLES * 8];
++              for (u32 i = 0; i < CELL_AUDIO_BLOCK_SAMPLES * 8; i++) tmp[i] = ld_be_f32(&src[i]);
++              fwrite(tmp, sizeof tmp, 1, rf); } }
++        /* AUDIO_CHRMS=1: every ~5 s, the RMS of each channel of each port
++         * (which speakers the guest's mixer is actually feeding). */
++        { static int on = -1; if (on < 0) on = getenv("AUDIO_CHRMS") ? 1 : 0;
++          if (on && nch <= 8) { static double acc[CELL_AUDIO_PORT_MAX][8]; static unsigned nb[CELL_AUDIO_PORT_MAX];
++            for (u32 s2 = 0; s2 < CELL_AUDIO_BLOCK_SAMPLES; s2++)
++                for (u32 c = 0; c < nch; c++) { const double v = ld_be_f32(&src[s2 * nch + c]); acc[p][c] += v * v; }
++            if (++nb[p] >= 940) {
++                fprintf(stderr, "[audio-ch] port %d rms:", p);
++                for (u32 c = 0; c < nch; c++) fprintf(stderr, " %.4f", sqrt(acc[p][c] / (nb[p] * (double)CELL_AUDIO_BLOCK_SAMPLES)));
++                fprintf(stderr, "\n"); memset(acc[p], 0, sizeof acc[p]); nb[p] = 0; } } }
+ 
+         /* Firmware clears a ring-buffer block after consuming it. Besides
+          * preventing stale PCM from replaying when a producer stalls, the
+@@ -547,6 +579,14 @@ static void audio_mix_one_block(void)
+ 
+     mutex_unlock(&s_audio_mutex);
+ 
++    /* PS3_AUDIO_DOWNMIX=itu also rounds peaks off above 0.8 (tanh knee)
++     * instead of cutting them flat at 1.0. */
++    { const char* e = getenv("PS3_AUDIO_DOWNMIX");
++      if (e && !strcmp(e, "itu"))
++          for (u32 i = 0; i < CELL_AUDIO_BLOCK_SAMPLES * 2; i++) {
++              const float x = s_mix_buffer[i], ax = fabsf(x);
++              if (ax > 0.8f) s_mix_buffer[i] = copysignf(0.8f + 0.2f * tanhf((ax - 0.8f) / 0.2f), x);
++          } }
+     /* Clip to [-1.0, 1.0] */
+     for (u32 i = 0; i < CELL_AUDIO_BLOCK_SAMPLES * 2; i++) {
+         if (s_mix_buffer[i] > 1.0f) s_mix_buffer[i] = 1.0f;
 diff --git a/libs/input/cellKb.c b/libs/input/cellKb.c
 index 6b4cdbc7..93bd60aa 100644
 --- a/libs/input/cellKb.c
@@ -621,7 +686,7 @@ index 30290c73..fe39740a 100644
  s32 sys_prx_get_module_id_by_name(const char* name, u64 flags, u32* id);
  
 diff --git a/libs/video/cellGcmSys.c b/libs/video/cellGcmSys.c
-index f073f327..db54fbd3 100644
+index f073f327..2075f469 100644
 --- a/libs/video/cellGcmSys.c
 +++ b/libs/video/cellGcmSys.c
 @@ -2731,6 +2731,17 @@ static void gcm_rsx_process_fifo_unlocked(void)
@@ -663,7 +728,27 @@ index f073f327..db54fbd3 100644
                  if (!blk_ms || now - b_t0 < blk_ms) {
                      if (PS3_FT_ON() && !s_ft_sema_t0) s_ft_sema_t0 = ps3_ft_now();
                      sem_blocked = 1; break;
-@@ -3560,6 +3585,31 @@ s32 cellGcmSetPrepareFlip(void* ctx, u32 bufferId)
+@@ -2926,7 +2951,18 @@ static void gcm_rsx_process_fifo_unlocked(void)
+                  * same reason the live engine does, and masks them itself. */
+                 if (wdiag) { static int eng = -1;
+                   if (eng < 0) eng = rsx_draw_engine_enabled();
+-                  if (eng) rsx_draw_engine_method((subch << 13) | m, vm_read32(dea)); }
++                  /* GCM_ENGINE_3D_SUBCH=1: only what the walker itself routes as
++                   * 3D (subchannel 0, 1 unless GCM_SUBCH1_2D, and the driver
++                   * methods). The engine strips the subchannel, so a title's 2D
++                   * objects landed in the NV4097 register file: Afro Samurai's
++                   * NV3089 blits on subchannel 5 write 0x0304/0x0308/0x030C
++                   * (operation, clip point, clip size), which read back as
++                   * alpha test off, func 0x10004 -- and its foliage cards, whose
++                   * alpha test the title had set once, drew as dark rectangles. */
++                  static int only3d = -1;
++                  if (only3d < 0) { const char* e = getenv("GCM_ENGINE_3D_SUBCH"); only3d = e && *e == '1'; }
++                  if (eng && (!only3d || subch == 0 || (subch == 1 && !s1_2d) || ((subch << 13) | m) >= 0xE000u))
++                      rsx_draw_engine_method((subch << 13) | m, vm_read32(dea)); }
+ 
+                 /* RSX_LIVE_FEED_DBG=1: what the FIFO actually carries. Counted
+                  * for any run, live engine or not, so the method stream and the
+@@ -3560,6 +3596,31 @@ s32 cellGcmSetPrepareFlip(void* ctx, u32 bufferId)
  
      printf("[cellGcmSys] SetPrepareFlip(bufferId=%u)\n", bufferId);
  
@@ -695,7 +780,7 @@ index f073f327..db54fbd3 100644
      gcm_set_current_display_buffer(bufferId);
      s_flip_status = CELL_GCM_FLIP_STATUS_DONE;
      s_flip_request_count++;
-@@ -3578,6 +3628,15 @@ s32 cellGcmSetPrepareFlip(void* ctx, u32 bufferId)
+@@ -3578,6 +3639,15 @@ s32 cellGcmSetPrepareFlip(void* ctx, u32 bufferId)
  /* NID: 0x1BFAB6EE */
  CellGcmDisplayInfo* cellGcmGetDisplayBufferByFlipIndex(u32 index)
  {
@@ -712,7 +797,7 @@ index f073f327..db54fbd3 100644
      return &s_display_buffers[id];
  }
 diff --git a/libs/video/rsx_draw_engine.c b/libs/video/rsx_draw_engine.c
-index 19548e0a..d6248a5f 100644
+index 19548e0a..89761b26 100644
 --- a/libs/video/rsx_draw_engine.c
 +++ b/libs/video/rsx_draw_engine.c
 @@ -17,6 +17,7 @@
@@ -781,7 +866,17 @@ index 19548e0a..d6248a5f 100644
          vi = rsx_vp_decompile_compact_ex(vp_uc, vp_instrs * 16u, vtex_mask,
                                           layout->mask, s_vs_hlsl,
                                           sizeof s_vs_hlsl);
-@@ -3141,6 +3172,33 @@ static void pd_note(const u32* targets, u32 n_targets, u32 zslot,
+@@ -3122,6 +3153,9 @@ static void pd_note(const u32* targets, u32 n_targets, u32 zslot,
+         return;
+     }
+     if (s_pd.draws_log) {
++        fprintf(s_pd.draws_log, "aa %08X afunc %X aref %X araw[%X %X %X] | ", rsx_dsp_reg(&g.rsx, 0x1D7Cu),
++                rs->alpha_func, rs->alpha_ref_raw, rsx_dsp_reg(&g.rsx, 0x0304u), rsx_dsp_reg(&g.rsx, 0x0308u),
++                rsx_dsp_reg(&g.rsx, 0x030Cu));
+         fprintf(s_pd.draws_log, "pass %03u draw %u: pipe %u cmask %08X blend %u %X/%X"
+                 " dt %u dw %u at %u |", s_pd.pass, s_pd.draws, pipeline, rs->color_mask,
+                 rs->blend_enable, rs->sf_rgb, rs->df_rgb, rs->depth_test, rs->depth_write,
+@@ -3141,6 +3175,33 @@ static void pd_note(const u32* targets, u32 n_targets, u32 zslot,
              fprintf(s_pd.draws_log, " t%u %u:0x%08X f%02X %ux%u", u, t.location, t.offset,
                      t.format & 0xFFu, t.width, t.height);
          }
@@ -1216,7 +1311,7 @@ index fd2c2078..bbbf251e 100644
 +    ps3_hle_register_ctx(ps3_compute_nid("sys_mmapper_free_memory"),    "sys_mmapper_free_memory",    sys_mmapper_free_memory_tracked);
  }
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 84b7ac96..bb41b153 100644
+index 84b7ac96..5d28c1de 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
 @@ -2323,6 +2323,46 @@ static void spu_ef_deliver_owed(spu_context* ctx, uint32_t wobj)
@@ -1311,6 +1406,22 @@ index 84b7ac96..bb41b153 100644
              spu_ef_deliver_owed(ctx, wobj);
          }
          ctx->gpr[3]._u32[0] = 0;
+@@ -2961,6 +3028,15 @@ void spu_indirect_branch(spu_context* ctx)
+               if (PS3_LOG_FIRST(_n, 8))
+                   fprintf(stderr, "[spu] img=%d interpreting unlifted LS 0x%05X "
+                           "(runtime-loaded code)\n", ctx->image_id, p);
++              /* SPU_INTERP_DUMP=<dir> (diagnostic): the whole local store at
++               * the first interpretation of each entry, to lift the module. */
++              { const char* dd = getenv("SPU_INTERP_DUMP");
++                static uint32_t dseen[64]; static int dn;
++                if (dd && *dd) { int k = 0; for (; k < dn; k++) if (dseen[k] == p) break;
++                  if (k == dn && dn < 64) { dseen[dn++] = p; char path[1024];
++                    snprintf(path, sizeof path, "%s/ls_img%d_%05X_lr%05X.bin", dd, ctx->image_id, p,
++                             ctx->gpr[0]._u32[0] & SPU_LS_MASK);
++                    FILE* f = fopen(path, "wb"); if (f) { fwrite(ctx->ls, 1, SPU_LS_SIZE, f); fclose(f); } } } }
+               spu_interp_run(ctx, p);
+               return;
+           } }
 diff --git a/runtime/spu/spu_dma.h b/runtime/spu/spu_dma.h
 index 8c4ccaa8..108e2694 100644
 --- a/runtime/spu/spu_dma.h
