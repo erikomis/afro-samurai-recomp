@@ -118,7 +118,7 @@ index 49e13905..24f12d08 100644
  s32 cellKbSetReadMode(u32 port_no, u32 rmode);
  s32 cellKbSetCodeType(u32 port_no, u32 codetype);
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index b09220e2..ff0ef6fc 100644
+index b09220e2..8d66c35a 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
 @@ -2890,11 +2890,30 @@ s32 cellSpursJobGuardReset(u64 guard_ea)
@@ -178,7 +178,98 @@ index b09220e2..ff0ef6fc 100644
      /* Carry the job's mailbox answer in the completion event. On hardware the
       * SPU's outbound/interrupt mailbox is what the SPURS event delivers; a
       * synthetic payload means the caller reads back zero for whatever it
-@@ -3013,7 +3049,23 @@ static void jc_execute(u32 entry_ea, u32 jc_ea, u32 size_desc)
+@@ -3000,6 +3036,90 @@ static void jc_signal_done(u32 jc_ea, int job_index)
+     }
+ }
+ 
++/* SPURS_JC_JOBLIST_PAR=<n> (2..CELL_SPURS_MAX_SPU): run a JOBLIST's jobs on
++ * up to n host threads at once -- the chain's own and n-1 helpers taking the
++ * next job from a shared counter -- as jm2 spreads them over the instance's
++ * SPUs, instead of one after another on the chain's thread. Each thread is its
++ * own SPU number (0..n-1): titles key per-SPU resources on it (EDGE output
++ * rings, one RSX label per SPU). Each signals its own jobs' completion, since
++ * a job's mailbox is thread-local. The chain moves past the list only once
++ * every job has finished, as if a SYNC followed it, so the commands after it
++ * see what the list wrote. Afro Samurai's vertex-skinning list was ~94% of
++ * one host thread, run serially, and its render thread waits on it each
++ * frame. Off (0) by default. */
++typedef struct {
++    u32 jc_ea, ea, sz, n;
++    int idx_base;
++    volatile LONG next;        /* next job to take */
++    volatile LONG active;      /* helpers still running */
++} jc_list_run;
++
++static void jc_list_work(jc_list_run* r, u32 spu_num)
++{
++    extern void spurs_job_set_spu_num(uint32_t n);
++    extern u32 g_spurs_job_ls_handle;
++    spurs_job_set_spu_num(spu_num);
++    for (;;) {
++        const LONG i = _InterlockedIncrement(&r->next) - 1;
++        if (i < 0 || (u32)i >= r->n) break;
++        g_spurs_job_ls_handle = r->jc_ea;
++        jc_run_one_job(r->ea + (u32)i * r->sz, r->idx_base + (int)i, r->sz);
++        jc_signal_done(r->jc_ea, r->idx_base + (int)i);
++    }
++}
++
++typedef struct { jc_list_run* r; u32 spu_num; } jc_list_helper;
++
++static DWORD WINAPI jc_list_helper_thread(LPVOID p)
++{
++    jc_list_helper h = *(jc_list_helper*)p;
++    free(p);
++    ps3_thread_name("spurs jc list %u", h.spu_num);
++    jc_list_work(h.r, h.spu_num);
++    _InterlockedDecrement(&h.r->active);      /* last touch of r */
++    return 0;
++}
++
++static int jc_list_par(void)
++{
++    static int s_par = -1;
++    if (s_par < 0) {
++        const char* e = getenv("SPURS_JC_JOBLIST_PAR");
++        s_par = e && *e ? atoi(e) : 0;
++        if (s_par > CELL_SPURS_MAX_SPU) s_par = CELL_SPURS_MAX_SPU;
++        if (s_par < 2) s_par = 0;
++        if (s_par) fprintf(stderr, "[cellSpurs] JOBLIST jobs on up to %d threads (SPURS_JC_JOBLIST_PAR)\n", s_par);
++    }
++    return s_par;
++}
++
++static void jc_run_list_parallel(u32 jc_ea, u32 ea, u32 sz, u32 n, int idx_base, int par)
++{
++    jc_list_run r;
++    r.jc_ea = jc_ea; r.ea = ea; r.sz = sz; r.n = n; r.idx_base = idx_base;
++    r.next = 0; r.active = 0;
++    const u32 helpers = (u32)par - 1u < n - 1u ? (u32)par - 1u : n - 1u;
++    for (u32 k = 0; k < helpers; k++) {
++        jc_list_helper* h = (jc_list_helper*)malloc(sizeof *h);
++        if (!h) break;
++        h->r = &r; h->spu_num = k + 1u;
++        _InterlockedIncrement(&r.active);
++        /* A job's spu_context, local store included, lives on the stack. */
++        HANDLE th = CreateThread(NULL, 1u << 20, jc_list_helper_thread, h, 0, NULL);
++        if (th) CloseHandle(th);
++        else { free(h); _InterlockedDecrement(&r.active); }
++    }
++    jc_list_work(&r, 0);
++    { extern void spurs_job_set_spu_num(uint32_t n); spurs_job_set_spu_num(0); }
++    while (r.active > 0) {
++#ifdef _WIN32
++        Sleep(0);
++#else
++        usleep(20);
++#endif
++    }
++}
++
+ static void jc_execute(u32 entry_ea, u32 jc_ea, u32 size_desc)
+ {
+     u32 pc = entry_ea, ret_pc = 0;
+@@ -3013,7 +3133,23 @@ static void jc_execute(u32 entry_ea, u32 jc_ea, u32 size_desc)
       * count that instead and reset it whenever real work happens. */
      int idle = 0;
      for (;; idle++) {
@@ -203,7 +294,7 @@ index b09220e2..ff0ef6fc 100644
          u64 cmd = vm_read64(pc);
          u32 op  = (u32)(cmd & 7);
          u32 ext = (u32)(cmd & 127);
-@@ -3036,8 +3088,27 @@ static void jc_execute(u32 entry_ea, u32 jc_ea, u32 size_desc)
+@@ -3036,8 +3172,27 @@ static void jc_execute(u32 entry_ea, u32 jc_ea, u32 size_desc)
          if (op == 4) { ret_pc = pc + 8; pc = (u32)(cmd & ~7ull); continue; }  /* CALL */
          if (op == 7) {
              if (ext == (7 | (15 << 3))) {                     /* END */
@@ -232,7 +323,7 @@ index b09220e2..ff0ef6fc 100644
                  return;
              }
              if (ext == (7 | (14 << 3))) {                     /* RET */
-@@ -3051,11 +3122,42 @@ static void jc_execute(u32 entry_ea, u32 jc_ea, u32 size_desc)
+@@ -3051,11 +3206,46 @@ static void jc_execute(u32 entry_ea, u32 jc_ea, u32 size_desc)
          }
          if (op == 7 && ext == (7 | (1 << 3))) {           /* GUARD */
              u32 g_ea = (u32)(cmd & ~127ull);
@@ -260,7 +351,11 @@ index b09220e2..ff0ef6fc 100644
 +            { static int _n = 0; if (PS3_LOG_FIRST(_n, 12))
 +                fprintf(stderr, "[cellSpurs] chain 0x%08X: JOBLIST @0x%08X numJobs=%u sizeOfJob=%u "
 +                                "eaJobList=0x%08X%s\n", jc_ea, l, n, sz, ea, s_jl ? "" : " (skipped)"); }
-+            if (s_jl && ea && sz >= 64 && n <= 4096) {
++            if (s_jl && ea && sz >= 64 && n <= 4096 && n > 1 && jc_list_par()) {
++                jc_run_list_parallel(jc_ea, ea, sz, n, jobs, jc_list_par());
++                jobs += (int)n;
++                idle = 0;
++            } else if (s_jl && ea && sz >= 64 && n <= 4096) {
 +                for (u32 i = 0; i < n; i++) {
 +                    { extern u32 g_spurs_job_ls_handle; g_spurs_job_ls_handle = jc_ea; }
 +                    int idx = jobs++;
@@ -277,7 +372,7 @@ index b09220e2..ff0ef6fc 100644
          pc += 8;
      }
      printf("[cellSpurs] chain 0x%08X: 4096 commands with no job run after %d "
-@@ -3766,6 +3868,76 @@ s32 _cellSpursLFQueueInitialize(u64 owner_ea, u64 queue_ea, u64 buffer_ea,
+@@ -3766,6 +3956,76 @@ s32 _cellSpursLFQueueInitialize(u64 owner_ea, u64 queue_ea, u64 buffer_ea,
      return CELL_OK;
  }
  

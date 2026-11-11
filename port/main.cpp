@@ -583,6 +583,11 @@ static void afro_defaults(void)
      *     0x030C words switched the alpha test off, and grass and foliage
      *     cards drew as dark rectangles. */
     setenv("GCM_ENGINE_3D_SUBCH", "1", 0);
+    /* SPURS_JC_JOBLIST_PAR=4  the vertex-skinning JOBLIST runs on four host
+     *     threads, as jm2 spreads it over the instance's SPUs (the title
+     *     asks for 5). Serially it kept one host thread ~94% busy and the
+     *     render thread waited on it every frame. 0 = one after another. */
+    setenv("SPURS_JC_JOBLIST_PAR", "4", 0);
 }
 
 int main(int argc, char** argv)
