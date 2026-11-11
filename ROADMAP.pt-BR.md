@@ -200,11 +200,13 @@ vem a seguir. Mesma organização dos roadmaps do inFAMOUS 2 e dos Resistance.
 - [x] As mudanças do toolkit exportadas como um patch só,
   `patches/ps3recomp-ae92407b-afro.patch` (conferido que aplica num
   `ae92407b` limpo).
-- [ ] Um `tools/setup_toolkit.sh` que clona a v0.19.0 e aplica o patch, e um
-  `tools/export_toolkit_patch.sh` que transforma uma pasta do toolkit de volta
-  no patch.
-- [ ] Independente: o próprio buscador de chaves e o próprio venv de Python,
-  em vez dos do port do Deadpool.
+- [x] O `tools/setup_toolkit.sh` clona a v0.19.0 e aplica o patch; o
+  `tools/export_toolkit_patch.sh` transforma uma pasta do toolkit de volta no
+  patch (com os arquivos novos).
+- [x] Independente: o `tools/setup.sh` cria o próprio venv (`.venv`) e o
+  `tools/fetch_keys.py` grava as chaves APP a partir do `key_vault.cpp` fixo
+  do RPCS3 (o EBOOT que ele descriptografa é idêntico, byte a byte, ao
+  antigo).
 
 ## Depois de jogável (melhorias)
 

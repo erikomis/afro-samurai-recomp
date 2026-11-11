@@ -10,7 +10,10 @@
 #   AFRO_EBOOT     the decrypted PPU ELF the loader and lifter read
 #   Disc data      the ISO stays in ~/Downloads behind $AFRO_ROOT/game_iso;
 #                  run.sh mounts it read-only and links PS3_GAME into the VFS
-#   PY             the shared venv (../deadpool-recomp/tools/.venv)
+#   AFRO_KEYS      the disc SELF key file (tools/fetch_keys.py writes it to a
+#                  per-user folder outside the repository)
+#   PY             the Python in this repository's venv (.venv, made by
+#                  tools/setup.sh)
 export AFRO_ROOT=${AFRO_ROOT:-${0:A:h:h}}
 export PS3RECOMP_DIR=${PS3RECOMP_DIR:-$AFRO_ROOT/../ps3recomp-afro}
 export AFRO_TITLE_ID=BLUS30264
@@ -22,11 +25,14 @@ export AFRO_RECOMP=${AFRO_RECOMP:-$AFRO_ROOT/recompiled/$AFRO_TITLE_ID}
 export AFRO_BUILD=${AFRO_BUILD:-$AFRO_ROOT/build/$AFRO_TITLE_ID}
 export AFRO_ISO_DIR=${AFRO_ISO_DIR:-$AFRO_ROOT/game_iso}
 export AFRO_MOUNT=${AFRO_MOUNT:-/Volumes/AFRO_SAMURAI}
-# Disc SELF (key_rev 0x0001, APP): the APP keys in Deadpool's key file cover it.
-export AFRO_KEYS=${AFRO_KEYS:-$HOME/Desktop/deadpool-recomp/tools/self_keys.txt}
+# Disc SELF (key_rev 0x0001, APP). tools/fetch_keys.py writes it here.
+if [[ $OSTYPE == darwin* ]]; then _afro_data=$HOME/Library/Application\ Support
+else _afro_data=${XDG_DATA_HOME:-$HOME/.local/share}; fi
+export AFRO_KEYS=${AFRO_KEYS:-$_afro_data/afro-samurai-recomp/keys/self_keys.txt}
+unset _afro_data
 # The VFS tree run.sh assembles: the disc's PS3_GAME by leaf symlinks, plus the
 # save/cache trees the title creates under this repo, not under RPCS3's install.
 export AFRO_VFS_ROOT=${AFRO_VFS_ROOT:-$AFRO_ROOT/rpcs3/dev_hdd0/disc/$AFRO_TITLE_ID}
-export AFRO_VENV=${AFRO_VENV:-$AFRO_ROOT/../deadpool-recomp/tools/.venv}
+export AFRO_VENV=${AFRO_VENV:-$AFRO_ROOT/.venv}
 export PY=${PY:-$AFRO_VENV/bin/python}
 export PATH=/opt/homebrew/bin:$PATH

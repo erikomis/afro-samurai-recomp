@@ -222,10 +222,10 @@ O toolkit é o ps3recomp **v0.19.0** do upstream (`ae92407b`) mais as
 mudanças deste port (os pools de memória, o mapeador com controle, a
 resposta do primeiro save, `cellKbRead`, a fila lock-free do SPURS), que são
 genéricas e controladas por variáveis de ambiente, guardadas num patch só:
-[`patches/ps3recomp-ae92407b-afro.patch`](patches/). Por enquanto o build
-usa um checkout com o patch aplicado ao lado deste repositório
-(`../ps3recomp-afro`); um script que clona o toolkit e aplica o patch está no
-[roadmap](ROADMAP.pt-BR.md).
+[`patches/ps3recomp-ae92407b-afro.patch`](patches/). O
+`tools/setup_toolkit.sh` clona o upstream, faz checkout do `ae92407b` e aplica
+o patch ao lado deste repositório (`../ps3recomp-afro`); o
+`tools/export_toolkit_patch.sh` grava um checkout alterado de volta no patch.
 
 ## Compilando a partir do código
 
@@ -237,16 +237,29 @@ usa um checkout com o patch aplicado ao lado deste repositório
 - O seu próprio **disco do Afro Samurai, `BLUS30264`**, em ISO. Coloque-o
   (ou um link para a pasta dele) em `game_iso/`; ele é montado só para
   leitura e nunca é alterado.
-- Um arquivo de chaves para o SELF do disco (`AFRO_KEYS`; por enquanto o que
-  o `tools/fetch_keys.py` do port do Deadpool gera).
-- O toolkit ps3recomp em `../ps3recomp-afro` (`PS3RECOMP_DIR` muda isso):
-  o `ae92407b` do upstream com o `patches/ps3recomp-ae92407b-afro.patch`
-  aplicado (`git apply`).
 - Xcode Command Line Tools e Homebrew:
 
 ```sh
 brew install cmake ninja sdl2 glslang spirv-cross spirv-tools ffmpeg python@3.12
 ```
+
+### Preparando
+
+```sh
+tools/setup.sh              # toolkit, venv do Python, chaves; não compila
+tools/setup.sh --check      # só confere
+```
+
+O `tools/setup.sh` coloca o toolkit ps3recomp em `../ps3recomp-afro`
+(`PS3RECOMP_DIR` muda isso) com o `tools/setup_toolkit.sh`, cria o venv do
+Python deste repositório (`.venv`, a partir do `python3.12`; `PYBIN` escolhe
+outro) com o `requirements.txt` do toolkit e grava o arquivo de chaves do
+SELF do disco com o `tools/fetch_keys.py`. As chaves vêm do `key_vault.cpp`
+público do RPCS3 num commit fixo, conferido pelo SHA-256 (`--keys-source
+ARQUIVO` usa o arquivo do disco); nenhuma chave fica neste repositório. O
+arquivo vai para
+`~/Library/Application Support/afro-samurai-recomp/keys/self_keys.txt`, modo
+600 (`AFRO_KEYS` muda o lugar).
 
 ### Compilando
 
@@ -277,12 +290,13 @@ estiver rodando (inclusive o de outro port), para se a memória ficar baixa
 (código de saída 99) e pede `BUILD_ALLOW_FULL=1` antes de recompilar muitos
 pedaços traduzidos de uma vez (`tools/build.sh --check` diz o que seria
 recompilado; `BUILD_JOBS` define as compilações em paralelo, padrão 2). As
-ferramentas precisam de Python 3.10 ou mais novo (`PY=<python>` escolhe um).
+ferramentas rodam no venv que o `tools/setup.sh` cria (`PY=<python>` escolhe
+outro, Python 3.10 ou mais novo).
 Os caminhos estão no [`tools/env.sh`](tools/env.sh).
 
 ## Jogando
 
-Ainda não há nada para jogar além dos menus. Para rodar:
+A história vai do New Game até a primeira fase (veja o estado acima). Para rodar:
 
 ```sh
 tools/run.sh
@@ -298,7 +312,8 @@ Argumentos a mais são variáveis de ambiente: `tools/run.sh PS3_VERBOSE=1`.
 | Variável | Efeito |
 | --- | --- |
 | `PS3RECOMP_DIR` | o checkout do toolkit (padrão `../ps3recomp-afro`) |
-| `AFRO_KEYS` | o arquivo de chaves que o `decrypt_self.py` lê |
+| `AFRO_KEYS` | o arquivo de chaves que o `fetch_keys.py` grava e o `decrypt_self.py` lê |
+| `AFRO_VENV`, `PY` | o venv do Python (`.venv`) e o interpretador dele |
 | `AFRO_ISO_DIR`, `AFRO_MOUNT` | onde está a ISO (`game_iso/`) e onde ela é montada (`/Volumes/AFRO_SAMURAI`) |
 | `PS3_HDD0_ROOT`, `PS3_HDD1_ROOT` | as pastas de HDD do jogo (`rpcs3/dev_hdd0`, `rpcs3/dev_hdd1`) |
 | `PS3_VERBOSE=1` | o log completo do runtime (desligado no `run.sh`) |

@@ -42,7 +42,7 @@ for s in $steps; do
         say "decrypt"
         if [ ! -f "$E" ]; then
             [ -f "$AFRO_EBOOT_BIN" ] || { echo "EBOOT.BIN not found: $AFRO_EBOOT_BIN (run the stage step)" >&2; exit 1; }
-            [ -f "$AFRO_KEYS" ] || { echo "no key file: $AFRO_KEYS (../deadpool-recomp/tools/fetch_keys.py --out ...)" >&2; exit 1; }
+            [ -f "$AFRO_KEYS" ] || { echo "no key file: $AFRO_KEYS (run tools/setup.sh)" >&2; exit 1; }
             "$PY" "$here/decrypt_self.py" "$AFRO_EBOOT_BIN" -o "$E.partial" --keys "$AFRO_KEYS" \
                 || { rm -f "$E.partial"; exit 1; }
             mv "$E.partial" "$E"
