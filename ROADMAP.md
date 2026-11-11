@@ -260,10 +260,15 @@ a port bug and a bug of the original game are different things.
   (`tools/install.sh`, resumable), the settings this runtime has, saves
   manager, debug mode, Play shortcut, Add to Steam, Stop that quits cleanly,
   the running game's Dock icon from the player's disc (`PS3_APP_ICON`).
-- [ ] The rest of the other launchers' options, once the runtime has them:
-  internal resolution, MetalFX, vignette, grain and LUTs, window modes and
-  vsync, volume and output device, remapping, mouse camera, rumble, texture
-  packs (they live in the Deadpool port's toolkit work, not in this patch yet).
+- [x] The other launchers' options, in the runtime and in the app
+  (2026-11-11): internal resolution (`PS3_RES_SCALE`, experimental: 1.5x
+  checked in play, -3% frame rate), MetalFX, vignette, grain and LUTs, window
+  modes, screen and vsync, volume and output device, remapping
+  (`port/input.toml` keeps this port's layout as the default), mouse camera,
+  rumble.
+- [ ] Play-test them by hand: 2x and 3x, borderless and a second screen, the
+  mouse camera, remapped keys, rumble strength, the volume by ear.
+- [ ] Texture packs (`PS3_MODS_DIR`), the one option still missing.
 - [ ] Signed in-place app updates (needs an updater key; `launcher/README.md`).
 
 ### Other platforms

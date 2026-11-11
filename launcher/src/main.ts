@@ -19,7 +19,11 @@ export interface Settings {
   playDir: string;
   gameLang: string;
   windowSize: string;
-  fullscreen: boolean;
+  windowMode: string;
+  display: string;
+  vsync: boolean;
+  upscale: string;
+  resScale: string;
   gameIcon: boolean;
   aa: string;
   sharpen: number;
@@ -28,8 +32,22 @@ export interface Settings {
   gamma: number;
   vibrance: number;
   contrast: number;
-  keyboard: boolean;
+  vignette: number;
+  grain: number;
+  lutPath: string;
+  lutStrength: number;
+  inputMode: string;
+  mouse: boolean;
+  mouseSens: number;
+  mouseInvertY: boolean;
+  mouseInvertX: boolean;
+  mouseDeadzone: number;
+  mouseCapture: boolean;
+  rumble: boolean;
+  rumbleStrength: number;
+  audioVolume: number;
   audioMute: boolean;
+  audioDevice: string;
   audioDownmix: boolean;
   showFps: boolean;
   shaderCache: boolean;
@@ -171,6 +189,7 @@ function showView(view: string, tab?: string) {
   document.querySelectorAll<HTMLElement>(".nav").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   document.querySelector("main")!.scrollTop = 0;
   if (view === "home") refreshStatus();
+  if (view === "graphics") refreshScreens();
   if (view === "performance") refreshShaderCache();
   if (view === "game") {
     refreshDisc();
@@ -295,7 +314,8 @@ function bindCheck(id: string, key: BoolKey) {
   el.addEventListener("change", () => {
     settings[key] = el.checked;
     syncAll();
-    persist(key === "gameIcon" ? () => refreshStatus() : undefined);
+    // the mouse camera on writes the controls file: the Controls page shows it
+    persist(key === "gameIcon" ? () => refreshStatus() : key === "mouse" ? () => showControls($("view-controls").classList.contains("active")) : undefined);
   });
 }
 
@@ -343,21 +363,60 @@ function bindText(id: string, key: StrKey, after?: () => void) {
   });
 }
 
-/** Image-quality profiles over the three image options (the PS3 look,
- * a light clean-up, everything on). The list shows the one the values match. */
-const PRESETS: Record<string, Pick<Settings, "aniso" | "aa" | "sharpen">> = {
-  native: { aniso: 0, aa: "", sharpen: 0 },
-  balanced: { aniso: 4, aa: "fxaa", sharpen: 0.2 },
-  quality: { aniso: 16, aa: "fxaa", sharpen: 0.35 },
+/** Image-quality profiles over the image options (the PS3 look, a light
+ * clean-up at the native resolution, and SMAA at 1080p with MetalFX). The
+ * list shows the one the values match. */
+const PRESETS: Record<string, Pick<Settings, "aniso" | "aa" | "sharpen" | "resScale" | "upscale">> = {
+  native: { aniso: 0, aa: "", sharpen: 0, resScale: "", upscale: "" },
+  balanced: { aniso: 4, aa: "fxaa", sharpen: 0.2, resScale: "", upscale: "" },
+  quality: { aniso: 16, aa: "smaa", sharpen: 0.35, resScale: "1.5", upscale: "metalfx" },
 };
 function currentPreset(): string {
   for (const [name, p] of Object.entries(PRESETS)) {
-    if (settings.aniso === p.aniso && settings.aa === p.aa && Math.abs(settings.sharpen - p.sharpen) < 0.005) return name;
+    if (
+      settings.aniso === p.aniso &&
+      settings.aa === p.aa &&
+      Math.abs(settings.sharpen - p.sharpen) < 0.005 &&
+      settings.resScale === p.resScale &&
+      settings.upscale === p.upscale
+    )
+      return name;
   }
   return "custom";
 }
 function syncPreset() {
   $<HTMLSelectElement>("preset").value = currentPreset();
+}
+
+// ---- screens (PS3_DISPLAY) --------------------------------------------------------
+let screens: string[] = [];
+async function refreshScreens() {
+  screens = await invoke<string[]>("list_screens").catch(() => []);
+  fillScreens();
+}
+/** The main screen (the default), the connected ones, and the saved one when
+ * it is not connected now. */
+function fillScreens() {
+  const sel = $<HTMLSelectElement>("display");
+  sel.replaceChildren(new Option(t("settings.screenMain"), ""));
+  for (const n of screens ?? []) sel.append(new Option(n, n));
+  const cur = settings.display;
+  if (cur && !screens?.includes(cur)) sel.append(new Option(t("settings.screenMissing", { name: cur }), cur));
+  sel.value = cur;
+}
+
+/** Home's quick "Fullscreen": the display mode between the window and
+ * macOS's fullscreen (shown on for borderless too, which Graphics picks). */
+function bindQuickFullscreen() {
+  const el = $<HTMLInputElement>("q-fullscreen");
+  const sync = () => (el.checked = settings.windowMode === "fullscreen" || settings.windowMode === "borderless");
+  syncers.push(sync);
+  sync();
+  el.addEventListener("change", () => {
+    settings.windowMode = el.checked ? "fullscreen" : "windowed";
+    syncAll();
+    persist();
+  });
 }
 
 // ---- what the build supports ------------------------------------------------------
@@ -390,8 +449,13 @@ function bindSettings() {
   bindCheck("q-fps", "showFps");
   bindCheck("keep-awake", "keepAwake");
   bindCheck("q-awake", "keepAwake");
-  bindCheck("fullscreen", "fullscreen");
-  bindCheck("q-fullscreen", "fullscreen");
+  bindQuickFullscreen();
+  bindCheck("vsync", "vsync");
+  bindCheck("mouse-on", "mouse");
+  bindCheck("mouse-invert", "mouseInvertY");
+  bindCheck("mouse-invert-x", "mouseInvertX");
+  bindCheck("mouse-capture", "mouseCapture");
+  bindCheck("rumble-on", "rumble");
   bindCheck("parallel-jobs", "parallelJobs");
   bindCheck("high-priority", "highPriority");
   bindCheck("shader-cache", "shaderCache");
@@ -399,9 +463,13 @@ function bindSettings() {
   bindCheck("auto-mount", "autoMount");
   bindCheck("quiet-log", "quietLog");
   bindCheck("update-auto", "autoUpdateCheck");
-  bindCheck("keyboard", "keyboard");
   bindCheck("audio-mute", "audioMute");
   bindCheck("audio-downmix", "audioDownmix");
+  bindSelect("window-mode", "windowMode");
+  bindSelect("display", "display");
+  bindSelect("res-scale", "resScale");
+  bindSelect("upscale", "upscale");
+  bindSelect("input-mode", "inputMode");
   bindSelect("window-size", "windowSize");
   bindSelect("q-window-size", "windowSize");
   bindSelect("game-lang", "gameLang");
@@ -413,9 +481,36 @@ function bindSettings() {
   const signedPct = (v: number) => (Math.abs(v) < 0.005 ? t("settings.off") : `${v > 0 ? "+" : ""}${Math.round(v * 100)}%`);
   bindRange("vibrance", "vibrance", signedPct);
   bindRange("contrast", "contrast", (v) => (Math.abs(v - 1) < 0.005 ? t("settings.off") : `${Math.round(v * 100)}%`));
+  const pct = (v: number) => (v > 0.005 ? `${Math.round(v * 100)}%` : t("settings.off"));
+  bindRange("vignette", "vignette", pct);
+  bindRange("grain", "grain", pct);
+  bindRange("lut-strength", "lutStrength", (v) => `${Math.round(v * 100)}%`);
+  bindRange("mouse-sens", "mouseSens", (v) => `${v.toFixed(2)}×`);
+  bindRange("mouse-dz", "mouseDeadzone", (v) => String(v));
+  bindRange("rumble-strength", "rumbleStrength", (v) => `${v}%`);
+  bindRange("audio-volume", "audioVolume", (v) => `${v}%`);
+  const lutSync = () => {
+    $("lut-file").textContent = settings.lutPath ? tilde(settings.lutPath) : t("settings.lutNone");
+  };
+  syncers.push(lutSync);
+  lutSync();
+  $("lut-pick").addEventListener("click", async () => {
+    const p = await open({ title: t("settings.lut"), filters: [{ name: "PNG", extensions: ["png"] }] });
+    if (typeof p === "string") {
+      settings.lutPath = p;
+      syncAll();
+      persist();
+    }
+  });
+  $("lut-clear").addEventListener("click", () => {
+    settings.lutPath = "";
+    syncAll();
+    persist();
+  });
   bindText("ffmpeg-avcodec", "ffmpegAvcodec");
   bindText("ffmpeg-avutil", "ffmpegAvutil");
   bindText("play-dir", "playDir", () => refreshStatus());
+  bindText("audio-device", "audioDevice");
   bindText("extra-env", "extraEnv");
   syncers.push(syncPreset);
   syncPreset();
@@ -481,7 +576,11 @@ const DEFAULTS: Partial<Settings> = {
   autoMount: true,
   gameLang: "",
   windowSize: "",
-  fullscreen: false,
+  windowMode: "windowed",
+  display: "",
+  vsync: true,
+  upscale: "",
+  resScale: "",
   gameIcon: false,
   aa: "",
   sharpen: 0,
@@ -490,8 +589,22 @@ const DEFAULTS: Partial<Settings> = {
   gamma: 1,
   vibrance: 0,
   contrast: 1,
-  keyboard: true,
+  vignette: 0,
+  grain: 0,
+  lutPath: "",
+  lutStrength: 1,
+  inputMode: "both",
+  mouse: false,
+  mouseSens: 1,
+  mouseInvertY: false,
+  mouseInvertX: false,
+  mouseDeadzone: 30,
+  mouseCapture: true,
+  rumble: true,
+  rumbleStrength: 100,
+  audioVolume: 100,
   audioMute: false,
+  audioDevice: "",
   audioDownmix: false,
   showFps: false,
   shaderCache: true,
@@ -511,6 +624,11 @@ const DEFAULTS: Partial<Settings> = {
 
 function syncDependent() {
   $<HTMLInputElement>("gamma").disabled = !settings.gammaOverride;
+  for (const id of ["mouse-sens", "mouse-invert", "mouse-invert-x", "mouse-dz", "mouse-capture"]) $<HTMLInputElement>(id).disabled = !settings.mouse;
+  $<HTMLInputElement>("rumble-strength").disabled = !settings.rumble;
+  $<HTMLInputElement>("audio-volume").disabled = settings.audioMute;
+  $<HTMLInputElement>("lut-strength").disabled = !settings.lutPath;
+  $<HTMLButtonElement>("lut-clear").disabled = !settings.lutPath;
   for (const id of ["ffmpeg-avcodec", "ffmpeg-avutil", "pick-avcodec", "pick-avutil"]) ($(id) as HTMLInputElement).disabled = !settings.video;
 }
 
@@ -527,6 +645,7 @@ function applyLang(l: Lang) {
   renderPort();
   renderDisc();
   renderControls();
+  fillScreens();
   renderFeatures();
   renderSaves();
   renderReport();

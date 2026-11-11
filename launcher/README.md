@@ -59,13 +59,22 @@ executable is searched for the variable's name) says to rebuild instead.
   (window size, fullscreen, fps counter, keep the Mac awake), **Last save**,
   **Status** (state, disc, build, play folder; links to the log, Updates,
   **Play shortcut on the Desktop**, **Add to Steam**).
-- **Graphics / Gráficos**: the window: its size (`PS3RECOMP_METAL_WINDOW`;
-  the picture keeps 16:9 with black bars), start in fullscreen
-  (`PS3RECOMP_FULLSCREEN=1`), "Your disc's icon in the Dock" (and "Use as the
-  app's Finder icon"); image quality: a profile, FXAA or SMAA (`PS3_AA`),
-  sharpening (`PS3_SHARPEN`), anisotropic filtering (`PS3_ANISO`), a gamma
-  override (`PS3_DISPLAY_GAMMA`); filters: vibrance and contrast
-  (`PS3_VIBRANCE`, `PS3_CONTRAST`).
+- **Graphics / Gráficos**: the window: the display mode (window, macOS's
+  fullscreen or borderless: `PS3_WINDOW_MODE=fullscreen|borderless`; Home's
+  quick "Fullscreen" switches between the window and fullscreen), its size
+  (`PS3RECOMP_METAL_WINDOW`; the picture keeps 16:9 with black bars), the
+  screen (`PS3_DISPLAY`, the names from `NSScreen`), vsync (`PS3_VSYNC=0`
+  when off), "Your disc's icon in the Dock" (and "Use as the app's Finder
+  icon"); image quality: a profile, the internal resolution
+  (`PS3_RES_SCALE` 1.5, 2 or 3; experimental), MetalFX upscaling
+  (`PS3_UPSCALE=metalfx`), FXAA or SMAA (`PS3_AA`), sharpening
+  (`PS3_SHARPEN`), anisotropic filtering (`PS3_ANISO`), a gamma override
+  (`PS3_DISPLAY_GAMMA`); filters: vibrance and contrast (`PS3_VIBRANCE`,
+  `PS3_CONTRAST`), vignette and film grain (`PS3_VIGNETTE`, `PS3_GRAIN`), a
+  colour LUT file in ReShade's PNG layout and its strength (`PS3_LUT`,
+  `PS3_LUT_STRENGTH`). The profiles: **Original (PS3)** is everything off,
+  **Balanced** FXAA, 4× and 20% sharpening at the native resolution,
+  **Quality** SMAA, 16×, 35% sharpening, internal resolution 1.5 and MetalFX.
 - **Performance / Desempenho**: the skinning jobs on four threads (on, as
   `port/main.cpp` sets it; off passes `SPURS_JC_JOBLIST_PAR=0`), high
   priority for the game's threads (on; off passes `PS3_QOS=0`), the shader
@@ -77,15 +86,31 @@ executable is searched for the variable's name) says to rebuild instead.
   empty = the Mac's); movies (`PS3RECOMP_FFMPEG=0` when off, and the
   `PS3RECOMP_FFMPEG_AVCODEC` / `_AVUTIL` paths, Homebrew's by default: the
   runtime dlopens them by name, which a GUI app's search path misses); audio:
-  mute (`PS3_MUTE=1`) and the ITU stereo fold-down (`PS3_AUDIO_DOWNMIX=itu`);
-  the play folder; the **saves manager** (below).
-- **Controls / Controles**: the port's built-in layout, which this runtime
-  cannot remap: the keyboard is pad 1 (Z ✕, X ○, A □, S △, Q L1, W R1, 1 L2,
-  2 R2, Return START, Tab SELECT, the arrows the d-pad and the left stick,
-  from the toolkit's `libs/input/cellPad.c`), a controller goes through SDL2.
-  Pressing keys or controller buttons lights the rows they drive, and the
-  controller test shows the pad's name and both sticks. "The keyboard drives
-  the game" off passes `PAD_NO_KEYBOARD=1`.
+  the volume (`PS3_AUDIO_VOLUME`, passed below 100), mute
+  (`PS3_AUDIO_MUTE=1`), the output device by a part of its name
+  (`PS3_AUDIO_DEVICE`) and the ITU stereo fold-down
+  (`PS3_AUDIO_DOWNMIX=itu`); the play folder; the **saves manager** (below).
+- **Controls / Controles**: the bindings, one row per PS3 control and a
+  column each for the keyboard, the mouse buttons and the controller: click
+  a cell, then press the key, mouse button (or scroll) or controller button;
+  × unbinds, Esc cancels, and a controller the web view does not see can be
+  bound from a list. Pressing anything lights the rows it drives, and the
+  controller test shows the pad's name and both sticks. The default is the
+  port's own layout, `port/input.toml`: the keyboard as a pad (Z ✕, X ○,
+  A □, S △, Q L1, W R1, 1 L2, 2 R2, Return START, Tab SELECT, the arrows on
+  both the d-pad and the left stick, nothing on L3, R3 and the right stick),
+  no mouse buttons, SDL's standard mapping for a controller. A change is
+  written at once to `<data>/input.toml` (`PS3_INPUT_MAP`; format in the
+  toolkit's `libs/input/pad_input_map.h`), always as the full layout: every
+  control of the three sections (`""` = unbound) and a `[mouse]` section
+  from the mouse settings, because a control the file leaves out would get
+  the runtime's first-person default, not the port's. **Restore defaults**
+  moves that file to `input.toml.bak`, so the port's applies again. Below
+  the table: what drives the game (`PS3_INPUT_MODE=controller|keyboard`),
+  the mouse camera (off in this port; `PS3_MOUSE`, `_SENS`, `_INVERT_Y`,
+  `_INVERT_X`, `_DEADZONE`, `_CAPTURE`; the mouse buttons count only while
+  it is on) and controller vibration (`PS3_RUMBLE=0`,
+  `PS3_RUMBLE_STRENGTH`).
 - **Advanced / Avançado**, five tabs:
   - **Install / rebuild**: 1. the requirements (the Command Line Tools,
     Homebrew and its build tools, with **Install the build tools**; the disc,
@@ -144,7 +169,18 @@ launcher (Rust, src-tauri/src/lib.rs)
   game's Dock icon: the square one drawn from the player's own `ICON0.PNG`
   (the same as "Your disc's icon in the Dock"), else this app's icon, so the
   game never shows the generic executable icon; then only the settings that
-  differ from the port's defaults, then the extra variables. It drops an
+  differ from the runtime's defaults, then the extra variables. The controls
+  file is the one setting always passed: `PS3_INPUT_MAP` is the player's
+  `<data>/input.toml` when it exists, else the port folder's
+  `port/input.toml` (as `tools/run.sh`), since without a file the runtime
+  falls back to the toolkit's first-person layout. The mouse camera is on in
+  the runtime and off here, so off always passes `PS3_MOUSE=0`; on passes
+  `PS3_MOUSE=1` and every mouse variable (they win over the file's
+  `[mouse]`), and the player's file is written if there is none yet (the
+  port's layout, mouse buttons unbound) and kept in step with the mouse
+  settings. A `launcher.json` from before these options still loads:
+  `fullscreen: true` becomes the fullscreen display mode, `keyboard: false`
+  the "controller only" input mode. It drops an
   inherited `PS3RECOMP_METAL_HEADLESS`, `PS3RECOMP_HOST_SURFACES` and
   `PS3RECOMP_WINDOW_STATE`. A GUI app starts with a bare `PATH`: Homebrew's
   folders go in front.
@@ -286,9 +322,8 @@ no game art or logo. The font is Oswald (SIL Open Font License,
 
 ## Not done (from the inFAMOUS 2 and Resistance launchers)
 
-- **Rebinding the controls, the mouse camera, rumble settings, volume and
-  output device, internal resolution, MetalFX, vignette, grain, LUTs,
-  texture packs, the screen choice, vsync**: this port's runtime (upstream
+- **Texture packs**, and the picture options beyond the ones above (**tone
+  curve, clarity, built-in LUT presets**): this port's runtime (upstream
   ps3recomp v0.19 plus `patches/`) has no such options yet.
 - **Trophies**: the disc has no `PS3_GAME/TROPDIR`.
 - **A bundled port**: the app carries no sources; Install the game clones

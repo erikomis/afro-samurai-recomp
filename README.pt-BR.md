@@ -346,10 +346,12 @@ Resistance e com as cores do jogo. **Instalar o jogo** vai da imagem do seu
 disco até o Jogar num botão só (as Command Line Tools, as ferramentas de
 build do Homebrew, as fontes, o `tools/install.sh`: setup, stage, decrypt,
 analyse, lift, SPU, build; retoma de onde parou). **Jogar** inicia o jogo com
-o ambiente do `tools/run.sh` e as opções escolhidas (tamanho da janela e tela
-cheia, FXAA/SMAA, nitidez, filtragem anisotrópica 16×, gama, vibrância,
-contraste, o cache de shaders, o skinning em paralelo, o idioma do console,
-os vídeos, o mudo, a mixagem estéreo ITU, o teclado); **Parar** fecha o jogo
+o ambiente do `tools/run.sh` e as opções escolhidas (janela, tela cheia ou
+sem bordas, a tela, vsync; resolução interna até 4K (experimental), MetalFX,
+FXAA/SMAA, nitidez, filtragem anisotrópica 16×, gama, vibrância, contraste,
+vinheta, granulado, LUT de cor; o cache de shaders, o skinning em paralelo; o
+idioma do console, os vídeos, volume, saída de áudio, mudo; teclado, mouse e
+controle remapeáveis, a câmera no mouse, vibração); **Parar** fecha o jogo
 direito. Ele também tem gerenciador de saves (backups, cópias de e para o
 RPCS3, .zip), modo de depuração com captura de quadros e resumo do log, o
 log do jogo, o atalho Jogar, Adicionar à Steam, e o ícone no Dock e no jogo
@@ -389,6 +391,11 @@ dividir os saves com o `tools/run.sh`. Detalhes em
 | `PS3RECOMP_VTX_REMAP_HASH=1` | a deduplicação de vértices volta a usar o hash em todo draw (A/B) |
 | `PS3RECOMP_MSL_CACHE=<pasta>` | onde ficam as traduções de shader (`run.sh`: `cache/msl`) |
 | `PS3_QUIT_GRACE_MS` | quanto tempo uma saída espera o jogo antes de encerrá-lo (padrão 3000) |
+| `PS3_RES_SCALE=1.5\|2\|3` | resolução interna: os alvos de render em 1080p, 1440p ou 4K em vez de 1280×720 (experimental; 1,5 mediu -3% de taxa de quadros) |
+| `PS3_UPSCALE=metalfx`, `PS3_VSYNC=0`, `PS3_WINDOW_MODE=fullscreen\|borderless`, `PS3_DISPLAY`, `PS3_WINDOW_SIZE` | ampliação MetalFX até a janela, sem vsync, o modo, a tela e o tamanho da janela (Cmd+F alterna) |
+| `PS3_AA`, `PS3_SHARPEN`, `PS3_ANISO`, `PS3_VIBRANCE`, `PS3_CONTRAST`, `PS3_VIGNETTE`, `PS3_GRAIN`, `PS3_LUT` | o passe final: FXAA/SMAA, nitidez, filtragem anisotrópica, filtros de cor, um LUT no layout do ReShade |
+| `PS3_AUDIO_VOLUME=0..100`, `PS3_AUDIO_MUTE=1`, `PS3_AUDIO_DEVICE=<nome>` | volume geral, mudo, o dispositivo de saída |
+| `PS3_INPUT_MAP=<input.toml>`, `PS3_INPUT_MODE`, `PS3_MOUSE*`, `PS3_RUMBLE*` | o arquivo de controles (`run.sh`: `port/input.toml`, o layout deste port), só teclado ou só controle, a câmera no mouse, vibração |
 | `PS3_APP_ICON=<png>` | o ícone da janela do jogo no Dock (o launcher passa um desenhado do `ICON0.PNG` do seu disco) |
 | `SPURS_LFQ_NOWAKE=1` | desliga a correção de despertar da fila LF (para comparação) |
 | `SPURS_JG_WAIT_FOREVER=0` | o percorredor da cadeia de jobs volta a desistir de um guard fechado depois de 20 s (a cadeia de skinning morre antes do New Game) |

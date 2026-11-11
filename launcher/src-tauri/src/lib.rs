@@ -13,6 +13,7 @@
 //! the port itself has no Windows build.
 
 mod app_icon;
+mod input_map;
 mod play_shortcut;
 mod report;
 mod saves;
@@ -22,6 +23,7 @@ mod update;
 mod vdf;
 mod zipfile;
 
+use input_map::{Bindings, InputEnv};
 use saves::{read_sfo, BackupMeta, Side, Slot};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -72,8 +74,20 @@ pub struct Settings {
     pub game_lang: String,
     /// PS3RECOMP_METAL_WINDOW: the window's size "<w>x<h>"; empty = 1280x720.
     pub window_size: String,
-    /// PS3RECOMP_FULLSCREEN=1: start in macOS's fullscreen.
-    pub fullscreen: bool,
+    /// PS3_WINDOW_MODE: "windowed" (the default), "fullscreen" (macOS's own)
+    /// or "borderless". (Before it, a `fullscreen` switch: see
+    /// `parse_settings`.)
+    pub window_mode: String,
+    /// PS3_DISPLAY: the screen's name (or its 1-based number when two share
+    /// a name); empty = the main screen.
+    pub display: String,
+    /// PS3_VSYNC=0 when off.
+    pub vsync: bool,
+    /// PS3_UPSCALE: "" (a plain scale) or "metalfx" (macOS 13+).
+    pub upscale: String,
+    /// PS3_RES_SCALE: the internal resolution as a multiple of 1280x720,
+    /// "" (native), "1.5" (1080p), "2" (1440p) or "3" (4K). Experimental.
+    pub res_scale: String,
     /// The player's own ICON0.PNG in the Dock instead of the placeholder.
     pub game_icon: bool,
     /// PS3_AA: "" (off), "fxaa" or "smaa".
@@ -89,10 +103,35 @@ pub struct Settings {
     pub vibrance: f32,
     /// PS3_CONTRAST: 0.5 .. 1 (off) .. 1.5.
     pub contrast: f32,
-    /// PAD_NO_KEYBOARD=1 when off: the keyboard stops driving pad 1.
-    pub keyboard: bool,
-    /// PS3_MUTE=1 when muted.
+    /// PS3_VIGNETTE and PS3_GRAIN: 0 (off) .. 1.
+    pub vignette: f32,
+    pub grain: f32,
+    /// PS3_LUT: the player's colour LUT (ReShade's PNG layout), and how much
+    /// of it (PS3_LUT_STRENGTH, 0..1).
+    pub lut_path: String,
+    pub lut_strength: f32,
+    /// PS3_INPUT_MODE: "both" (the default), "controller" or "keyboard".
+    /// (Before it, a `keyboard` switch: see `parse_settings`.)
+    pub input_mode: String,
+    /// PS3_MOUSE, PS3_MOUSE_SENS, PS3_MOUSE_INVERT_Y, PS3_MOUSE_INVERT_X,
+    /// PS3_MOUSE_DEADZONE. The mouse camera is off in this port's layout
+    /// (the runtime's own defaults: on, 1.0, off, off, 30).
+    pub mouse: bool,
+    pub mouse_sens: f32,
+    pub mouse_invert_y: bool,
+    pub mouse_invert_x: bool,
+    pub mouse_deadzone: u32,
+    /// PS3_MOUSE_CAPTURE: a click captures the cursor (Esc/Cmd releases it).
+    pub mouse_capture: bool,
+    /// PS3_RUMBLE=0 when off; PS3_RUMBLE_STRENGTH in percent (0-200).
+    pub rumble: bool,
+    pub rumble_strength: u32,
+    /// PS3_AUDIO_VOLUME (0-100, 100 = the default), PS3_AUDIO_MUTE=1 when
+    /// muted, PS3_AUDIO_DEVICE (the output whose name contains it; empty =
+    /// the system's default).
+    pub audio_volume: u32,
     pub audio_mute: bool,
+    pub audio_device: String,
     /// PS3_AUDIO_DOWNMIX=itu: the multichannel mix folded down to stereo
     /// with ITU weights (off: the port's own fold-down).
     pub audio_downmix: bool,
@@ -139,7 +178,11 @@ impl Default for Settings {
             play_dir: String::new(),
             game_lang: String::new(),
             window_size: String::new(),
-            fullscreen: false,
+            window_mode: "windowed".into(),
+            display: String::new(),
+            vsync: true,
+            upscale: String::new(),
+            res_scale: String::new(),
             game_icon: false,
             aa: String::new(),
             sharpen: 0.0,
@@ -148,8 +191,22 @@ impl Default for Settings {
             gamma: 1.0,
             vibrance: 0.0,
             contrast: 1.0,
-            keyboard: true,
+            vignette: 0.0,
+            grain: 0.0,
+            lut_path: String::new(),
+            lut_strength: 1.0,
+            input_mode: "both".into(),
+            mouse: false,
+            mouse_sens: 1.0,
+            mouse_invert_y: false,
+            mouse_invert_x: false,
+            mouse_deadzone: 30,
+            mouse_capture: true,
+            rumble: true,
+            rumble_strength: 100,
+            audio_volume: 100,
             audio_mute: false,
+            audio_device: String::new(),
             audio_downmix: false,
             show_fps: false,
             shader_cache: true,
@@ -232,6 +289,73 @@ fn keys_path() -> PathBuf {
     std::env::var_os("AFRO_KEYS").filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| data_root().join("keys/self_keys.txt"))
 }
 
+/// The player's controls file (PS3_INPUT_MAP), next to launcher.json. It
+/// exists once the Controls page has changed a binding (or the mouse camera
+/// is on); until then Play passes the port's own, port/input.toml.
+fn input_map_path() -> PathBuf {
+    data_root().join("input.toml")
+}
+
+/// The controls file Play passes, always one when there is one: the player's
+/// when it exists, else the port checkout's port/input.toml. With neither
+/// (a checkout from before that file) the runtime would use its built-in
+/// first-person layout, which is not this port's.
+fn pick_input_map(player: &Path, port_root: Option<&Path>) -> InputEnv {
+    for p in [Some(player.to_path_buf()), port_root.map(|r| r.join("port/input.toml"))].into_iter().flatten() {
+        if let Ok(text) = fs::read_to_string(&p) {
+            return InputEnv { path: Some(s(&p)), has_mouse_section: input_map::parse(&text).mouse.is_some() };
+        }
+    }
+    InputEnv::default()
+}
+
+/// `[mouse]` of the player's file, from the mouse settings.
+fn mouse_section(s: &Settings) -> input_map::Mouse {
+    input_map::Mouse {
+        camera: s.mouse,
+        sensitivity: (s.mouse_sens.clamp(0.05, 10.0) * 100.0).round() / 100.0,
+        invert_x: s.mouse_invert_x,
+        invert_y: s.mouse_invert_y,
+        deadzone: s.mouse_deadzone.min(120),
+        capture: s.mouse_capture,
+    }
+}
+
+/// Write the player's file in full: the port's layout with `bindings` on
+/// top, every control listed (one the file left out would get the runtime's
+/// first-person default, not the port's), and `[mouse]` from the settings.
+/// Sections the launcher does not know stay as they were.
+fn write_input_map(path: &Path, bindings: &Bindings, s: &Settings) -> Result<(), String> {
+    input_map::validate(bindings)?;
+    let mut file = fs::read_to_string(path).map(|t| input_map::parse(&t)).unwrap_or_default();
+    file.bindings = input_map::full(bindings);
+    file.mouse = Some(mouse_section(s));
+    if let Some(d) = path.parent() {
+        fs::create_dir_all(d).map_err(|e| e.to_string())?;
+    }
+    let tmp = path.with_extension("toml.tmp");
+    fs::write(&tmp, input_map::render(&file)).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, path).map_err(|e| e.to_string())
+}
+
+/// Keep the player's file in step with the mouse settings: its `[mouse]` is
+/// rewritten when they changed, and with the mouse camera on and no file yet
+/// one is written (the port's layout), because the port's own file leaves
+/// the mouse buttons at the runtime's first-person defaults.
+fn sync_input_map(path: &Path, s: &Settings) -> Result<(), String> {
+    match fs::read_to_string(path) {
+        Ok(text) => {
+            let f = input_map::parse(&text);
+            if f.mouse.as_ref() == Some(&mouse_section(s)) {
+                return Ok(());
+            }
+            write_input_map(path, &f.bindings, s)
+        }
+        Err(_) if s.mouse => write_input_map(path, &Bindings::default(), s),
+        Err(_) => Ok(()),
+    }
+}
+
 fn rpcs3_dir() -> PathBuf {
     if cfg!(target_os = "macos") {
         home().join("Library/Application Support/rpcs3")
@@ -243,8 +367,26 @@ fn rpcs3_dir() -> PathBuf {
     }
 }
 
+/// launcher.json's text as settings. A file from before the window modes and
+/// the input mode had two switches instead, which still count: `fullscreen`
+/// on is the "fullscreen" window mode, `keyboard` off (PAD_NO_KEYBOARD) is
+/// the "controller" input mode.
+fn parse_settings(text: &str) -> Option<Settings> {
+    let v: serde_json::Value = serde_json::from_str(text).ok()?;
+    let old = |new: &str, old: &str| if v.get(new).is_none() { v.get(old).and_then(|x| x.as_bool()) } else { None };
+    let (fullscreen, keyboard) = (old("windowMode", "fullscreen"), old("inputMode", "keyboard"));
+    let mut s: Settings = serde_json::from_value(v).ok()?;
+    if fullscreen == Some(true) {
+        s.window_mode = "fullscreen".into();
+    }
+    if keyboard == Some(false) {
+        s.input_mode = "controller".into();
+    }
+    Some(s)
+}
+
 fn load_settings_file() -> Settings {
-    fs::read_to_string(settings_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+    fs::read_to_string(settings_path()).ok().and_then(|s| parse_settings(&s)).unwrap_or_default()
 }
 
 fn write_settings(s: &Settings) -> Result<(), String> {
@@ -954,6 +1096,14 @@ fn shell_quote(v: &str) -> String {
 // Launch
 // ---------------------------------------------------------------------------
 
+/// PS3_RES_SCALE for the `res_scale` setting: a multiple above 1 and up to 4
+/// (the runtime's range, in quarter steps), or None for native (also for
+/// anything unparsable).
+fn res_scale_value(v: &str) -> Option<String> {
+    let x: f32 = v.trim().parse().ok()?;
+    (x > 1.0 && x <= 4.0).then(|| format!("{}", (x * 4.0).round() / 4.0))
+}
+
 /// "<w>x<h>", as PS3RECOMP_METAL_WINDOW takes it (the runtime accepts
 /// 160x90 .. 16384x16384; the launcher keeps to sane screen sizes).
 fn valid_window_size(v: &str) -> bool {
@@ -966,8 +1116,9 @@ fn valid_window_size(v: &str) -> bool {
 /// save root, the boot path, the title, the shader cache, the firmware tree
 /// when RPCS3 has one), FFmpeg, then every setting that differs from the
 /// port's default; the extra variables last (they win).
-/// `icon`: the game window's Dock icon (game_icon below).
-fn launch_env(s: &Settings, vfs: &Path, play: &Path, icon: Option<&Path>) -> Vec<(String, String)> {
+/// `icon`: the game window's Dock icon (game_icon below). `input`: the
+/// controls file (`pick_input_map`).
+fn launch_env(s: &Settings, vfs: &Path, play: &Path, icon: Option<&Path>, input: &InputEnv) -> Vec<(String, String)> {
     let mut env: Vec<(String, String)> = Vec::new();
     let mut set = |k: &str, v: String| env.push((k.to_string(), v));
     if let Some(i) = icon {
@@ -1006,8 +1157,21 @@ fn launch_env(s: &Settings, vfs: &Path, play: &Path, icon: Option<&Path>) -> Vec
     if valid_window_size(&s.window_size) {
         set("PS3RECOMP_METAL_WINDOW", s.window_size.clone());
     }
-    if s.fullscreen {
-        set("PS3RECOMP_FULLSCREEN", "1".into());
+    if matches!(s.window_mode.as_str(), "fullscreen" | "borderless") {
+        set("PS3_WINDOW_MODE", s.window_mode.clone());
+    }
+    let display = s.display.trim();
+    if !display.is_empty() && !display.contains(['\n', '\r']) {
+        set("PS3_DISPLAY", display.to_string());
+    }
+    if !s.vsync {
+        set("PS3_VSYNC", "0".into());
+    }
+    if let Some(k) = res_scale_value(&s.res_scale) {
+        set("PS3_RES_SCALE", k);
+    }
+    if s.upscale == "metalfx" {
+        set("PS3_UPSCALE", "metalfx".into());
     }
     // The present pass: only what differs from the game's picture.
     if s.aa == "fxaa" || s.aa == "smaa" {
@@ -1028,13 +1192,71 @@ fn launch_env(s: &Settings, vfs: &Path, play: &Path, icon: Option<&Path>) -> Vec
     if (s.contrast - 1.0).abs() >= 0.005 && s.contrast > 0.0 {
         set("PS3_CONTRAST", format!("{:.2}", s.contrast.clamp(0.5, 1.5)));
     }
-    // Input and audio. The runtime turns each of these on for any value, so
-    // they are passed only when on.
-    if !s.keyboard {
-        set("PAD_NO_KEYBOARD", "1".into());
+    if s.vignette >= 0.005 {
+        set("PS3_VIGNETTE", format!("{:.2}", s.vignette.min(1.0)));
     }
+    if s.grain >= 0.005 {
+        set("PS3_GRAIN", format!("{:.2}", s.grain.min(1.0)));
+    }
+    let lut = s.lut_path.trim();
+    if !lut.is_empty() {
+        set("PS3_LUT", lut.to_string());
+        if s.lut_strength < 0.995 {
+            set("PS3_LUT_STRENGTH", format!("{:.2}", s.lut_strength.clamp(0.0, 1.0)));
+        }
+    }
+    // Input: the controls file (always, when there is one: the runtime's
+    // built-in layout is not this port's), then the mouse and rumble
+    // settings. The variables win over the file's [mouse]. The mouse camera
+    // is on in the runtime and off in this port, so off is always said; on,
+    // every mouse setting is passed when the file has a [mouse] (the port's
+    // and the launcher's own do), so the launcher's stand, and otherwise
+    // only what differs from the runtime's defaults.
+    if let Some(p) = &input.path {
+        set("PS3_INPUT_MAP", p.clone());
+    }
+    if matches!(s.input_mode.as_str(), "controller" | "keyboard") {
+        set("PS3_INPUT_MODE", s.input_mode.clone());
+    }
+    let all = input.has_mouse_section;
+    if !s.mouse {
+        set("PS3_MOUSE", "0".into());
+    } else {
+        if all {
+            set("PS3_MOUSE", "1".into());
+        }
+        if all || (s.mouse_sens - 1.0).abs() > 1e-3 {
+            set("PS3_MOUSE_SENS", format!("{:.2}", s.mouse_sens.clamp(0.05, 10.0)));
+        }
+        if all || s.mouse_invert_y {
+            set("PS3_MOUSE_INVERT_Y", if s.mouse_invert_y { "1" } else { "0" }.into());
+        }
+        if all || s.mouse_invert_x {
+            set("PS3_MOUSE_INVERT_X", if s.mouse_invert_x { "1" } else { "0" }.into());
+        }
+        if all || s.mouse_deadzone != 30 {
+            set("PS3_MOUSE_DEADZONE", s.mouse_deadzone.min(120).to_string());
+        }
+        if all || !s.mouse_capture {
+            set("PS3_MOUSE_CAPTURE", if s.mouse_capture { "1" } else { "0" }.into());
+        }
+    }
+    if !s.rumble {
+        set("PS3_RUMBLE", "0".into());
+    } else if s.rumble_strength != 100 {
+        set("PS3_RUMBLE_STRENGTH", s.rumble_strength.min(200).to_string());
+    }
+    // Audio: only what differs from the default (full volume, the system's
+    // output). The runtime mutes on any PS3_AUDIO_MUTE value, so it is
+    // passed only when on.
     if s.audio_mute {
-        set("PS3_MUTE", "1".into());
+        set("PS3_AUDIO_MUTE", "1".into());
+    } else if s.audio_volume < 100 {
+        set("PS3_AUDIO_VOLUME", s.audio_volume.to_string());
+    }
+    let device = s.audio_device.trim();
+    if !device.is_empty() && !device.contains(['\n', '\r']) {
+        set("PS3_AUDIO_DEVICE", device.to_string());
     }
     if s.audio_downmix {
         set("PS3_AUDIO_DOWNMIX", "itu".into());
@@ -1084,7 +1306,8 @@ fn launch_preview(settings: Settings) -> Result<String, String> {
     let b = resolve_builds(&root);
     let play = play_dir(&settings);
     let disc = find_disc(&settings).unwrap_or_else(|| PathBuf::from("<your mounted disc>"));
-    let env = launch_env(&settings, &vfs_for(&play, &disc), &play, game_icon(&settings).as_deref());
+    let input = pick_input_map(&input_map_path(), Some(&root));
+    let env = launch_env(&settings, &vfs_for(&play, &disc), &play, game_icon(&settings).as_deref(), &input);
     let mut out = vec![format!("cd {} &&", shell_quote(&s(&play)))];
     out.extend(env.into_iter().map(|(k, v)| format!("{k}={}", shell_quote(&v))));
     out.extend(launch_argv(&settings, &b).unwrap_or_else(|e| vec![format!("# {e}")]).iter().map(|a| shell_quote(a)));
@@ -1156,7 +1379,11 @@ fn play(app: AppHandle, state: State<'_, AppState>, diagnostic: Option<bool>) ->
     };
 
     let argv = launch_argv(&s, &b)?;
-    let mut env = launch_env(&s, &vfs, &play, game_icon(&s).as_deref());
+    // the player's controls file follows the mouse settings (a failure
+    // leaves the file as it is: the variables still carry them)
+    let _ = sync_input_map(&input_map_path(), &s);
+    let input = pick_input_map(&input_map_path(), Some(&root));
+    let mut env = launch_env(&s, &vfs, &play, game_icon(&s).as_deref(), &input);
     if let Some(d) = &report_dir {
         env.extend(report::env(d)); // after the extra variables: the report's paths win
     }
@@ -1309,8 +1536,14 @@ async fn get_status(app: AppHandle, state: State<'_, AppState>) -> Result<Status
 /// the name; the window then labels (or, for the optional game patches,
 /// hides) the setting rather than pass a variable nothing reads.
 const FEATURE_MARKERS: &[&str] = &[
-    "PS3RECOMP_FULLSCREEN", // the window's size and fullscreen
+    "PS3RECOMP_FULLSCREEN", // the window's size
+    "PS3_WINDOW_MODE",      // the window's modes, the screen, vsync
     "PS3_AA",               // the present pass: AA, sharpen, vibrance, contrast
+    "PS3_GRAIN",            // vignette, grain and the colour LUT
+    "PS3_RES_SCALE",        // internal resolution
+    "PS3_UPSCALE",          // MetalFX
+    "PS3_AUDIO_VOLUME",     // volume, mute and output device
+    "PS3_INPUT_MAP",        // bindings, input mode, mouse camera, rumble
     "PS3RECOMP_MSL_CACHE",  // the shader translation cache
     "SPURS_JC_JOBLIST_PAR", // the skinning jobs on four threads
     "PS3_QUIT_GRACE_MS",    // Stop and closing the window quit the game cleanly
@@ -1362,6 +1595,87 @@ fn mtime_of(m: &fs::Metadata) -> u64 {
 }
 
 // ---------------------------------------------------------------------------
+// Controls, screens
+// ---------------------------------------------------------------------------
+
+/// The controls for the Controls page: the full layout in effect (the port's
+/// with the player's file on top), the port's own for "Restore defaults",
+/// and where the player's file is.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InputMapView {
+    path: String,
+    exists: bool,
+    bindings: Bindings,
+    defaults: Bindings,
+}
+
+fn input_map_view(path: &Path) -> InputMapView {
+    let text = fs::read_to_string(path);
+    InputMapView {
+        path: s(path),
+        exists: text.is_ok(),
+        bindings: input_map::full(&text.map(|t| input_map::parse(&t).bindings).unwrap_or_default()),
+        defaults: input_map::port_defaults(),
+    }
+}
+
+#[tauri::command]
+fn get_input_map() -> InputMapView {
+    input_map_view(&input_map_path())
+}
+
+#[tauri::command]
+fn save_input_map(bindings: Bindings) -> Result<String, String> {
+    let p = input_map_path();
+    write_input_map(&p, &bindings, &load_settings_file())?;
+    Ok(s(&p))
+}
+
+/// "Restore defaults": the player's file goes (kept as input.toml.bak), so
+/// the port's own applies again. With the mouse camera on a file is still
+/// needed (`sync_input_map`): it is written anew with the port's layout.
+fn reset_input_map_at(path: &Path, s: &Settings) -> Result<(), String> {
+    if path.is_file() {
+        fs::rename(path, path.with_extension("toml.bak")).map_err(|e| e.to_string())?;
+    }
+    sync_input_map(path, s)
+}
+
+#[tauri::command]
+fn reset_input_map() -> Result<InputMapView, String> {
+    let p = input_map_path();
+    reset_input_map_at(&p, &load_settings_file())?;
+    Ok(input_map_view(&p))
+}
+
+/// The names in the JSON array the screen probe prints.
+fn parse_screens(json: &str) -> Vec<String> {
+    serde_json::from_str::<Vec<String>>(json.trim()).unwrap_or_default()
+}
+
+/// The screens in the system's order (NSScreen.screens: the first has the
+/// menu bar), by the names the game window's PS3_DISPLAY matches.
+#[tauri::command]
+async fn list_screens() -> Vec<String> {
+    if !cfg!(target_os = "macos") {
+        return Vec::new();
+    }
+    tauri::async_runtime::spawn_blocking(|| {
+        command_stdout(Command::new("/usr/bin/osascript").args([
+            "-l",
+            "JavaScript",
+            "-e",
+            "ObjC.import('AppKit'); JSON.stringify($.NSScreen.screens.js.map(s => s.localizedName.js))",
+        ]))
+        .map(|s| parse_screens(&s))
+        .unwrap_or_default()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
 // Settings, the port folder, the disc
 // ---------------------------------------------------------------------------
 
@@ -1373,6 +1687,7 @@ fn get_settings() -> Settings {
 #[tauri::command]
 fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
     write_settings(&settings)?;
+    let _ = sync_input_map(&input_map_path(), &settings); // Play does it again
     sync_app_icon(&app);
     Ok(())
 }
@@ -2702,6 +3017,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_settings,
             save_settings,
+            get_input_map,
+            save_input_map,
+            reset_input_map,
+            list_screens,
             get_status,
             find_port_dirs,
             builds_at,
@@ -2858,7 +3177,8 @@ mod tests {
 
     #[test]
     fn launch_env_maps_the_settings() {
-        let env = |st: &Settings| -> BTreeMap<String, String> { launch_env(st, Path::new("/v"), Path::new("/p"), None).into_iter().collect() };
+        let none = InputEnv::default();
+        let env = |st: &Settings| -> BTreeMap<String, String> { launch_env(st, Path::new("/v"), Path::new("/p"), None, &none).into_iter().collect() };
         let mut st = Settings::default();
         st.video = false; // no FFmpeg lookup
         st.shader_cache = false;
@@ -2873,17 +3193,25 @@ mod tests {
         assert_eq!(e["AUDIO_ELASTIC"], "1");
         assert_eq!(e["PS3_VERBOSE"], "0");
         assert_eq!(e["PS3RECOMP_FFMPEG"], "0");
+        // the mouse camera is the one default that differs from the runtime's
+        assert_eq!(e["PS3_MOUSE"], "0");
         // the defaults pass nothing else
         for k in [
-            "PS3RECOMP_METAL_WINDOW", "PS3RECOMP_FULLSCREEN", "PS3_AA", "PS3_SHARPEN", "PS3_ANISO", "PS3_DISPLAY_GAMMA", "PS3_VIBRANCE",
-            "PS3_CONTRAST", "PAD_NO_KEYBOARD", "PS3_MUTE", "PS3_AUDIO_DOWNMIX", "PS3RECOMP_METAL_FPS", "PS3RECOMP_MSL_CACHE",
-            "SPURS_JC_JOBLIST_PAR", "PS3_QOS", "PS3_FRAMECLOCK_US", "PS3_LANG", "PS3_APP_ICON",
+            "PS3RECOMP_METAL_WINDOW", "PS3RECOMP_FULLSCREEN", "PS3_WINDOW_MODE", "PS3_WINDOW_SIZE", "PS3_DISPLAY", "PS3_VSYNC",
+            "PS3_RES_SCALE", "PS3_UPSCALE", "PS3_AA", "PS3_SHARPEN", "PS3_ANISO", "PS3_DISPLAY_GAMMA", "PS3_VIBRANCE", "PS3_CONTRAST",
+            "PS3_VIGNETTE", "PS3_GRAIN", "PS3_LUT", "PS3_LUT_STRENGTH", "PS3_INPUT_MAP", "PS3_INPUT_MODE", "PAD_NO_KEYBOARD",
+            "PS3_MOUSE_SENS", "PS3_MOUSE_INVERT_X", "PS3_MOUSE_INVERT_Y", "PS3_MOUSE_DEADZONE", "PS3_MOUSE_CAPTURE", "PS3_RUMBLE",
+            "PS3_RUMBLE_STRENGTH", "PS3_MUTE", "PS3_AUDIO_MUTE", "PS3_AUDIO_VOLUME", "PS3_AUDIO_DEVICE", "PS3_AUDIO_DOWNMIX",
+            "PS3RECOMP_METAL_FPS", "PS3RECOMP_MSL_CACHE", "SPURS_JC_JOBLIST_PAR", "PS3_QOS", "PS3_FRAMECLOCK_US", "PS3_LANG",
+            "PS3_APP_ICON",
         ] {
             assert!(!e.contains_key(k), "{k} passed with the defaults");
         }
+        let keys: Vec<&str> = e.keys().map(String::as_str).filter(|k| *k != "PS3_DEV_FLASH").collect(); // RPCS3's firmware, when installed
+        assert_eq!(keys, ["AUDIO_ELASTIC", "PS3RECOMP_FFMPEG", "PS3_BOOT_PATH", "PS3_GAMEDATA_ROOT", "PS3_HDD0_ROOT", "PS3_HDD1_ROOT", "PS3_MOUSE", "PS3_TITLE", "PS3_VERBOSE", "PS3_VFS_ROOT"]);
 
         st.window_size = "1920x1080".into();
-        st.fullscreen = true;
+        st.window_mode = "fullscreen".into();
         st.aa = "smaa".into();
         st.sharpen = 0.5;
         st.aniso = 32;
@@ -2891,7 +3219,7 @@ mod tests {
         st.gamma = 9.0;
         st.vibrance = -0.25;
         st.contrast = 1.2;
-        st.keyboard = false;
+        st.input_mode = "controller".into();
         st.audio_mute = true;
         st.audio_downmix = true;
         st.show_fps = true;
@@ -2902,18 +3230,21 @@ mod tests {
         st.game_lang = "ja".into();
         st.quiet_log = false;
         st.extra_env = "PS3_AA=fxaa\nX=1".into();
-        let v = launch_env(&st, Path::new("/v"), Path::new("/p"), Some(Path::new("/i.png")));
+        let v = launch_env(&st, Path::new("/v"), Path::new("/p"), Some(Path::new("/i.png")), &none);
         let e: BTreeMap<String, String> = v.iter().cloned().collect();
         assert_eq!(e["PS3_APP_ICON"], "/i.png");
         assert_eq!(e["PS3RECOMP_METAL_WINDOW"], "1920x1080");
-        assert_eq!(e["PS3RECOMP_FULLSCREEN"], "1");
+        assert_eq!(e["PS3_WINDOW_MODE"], "fullscreen");
+        assert!(!e.contains_key("PS3RECOMP_FULLSCREEN"));
         assert_eq!(e["PS3_SHARPEN"], "0.50");
         assert_eq!(e["PS3_ANISO"], "16");
         assert_eq!(e["PS3_DISPLAY_GAMMA"], "1.50");
         assert_eq!(e["PS3_VIBRANCE"], "-0.25");
         assert_eq!(e["PS3_CONTRAST"], "1.20");
-        assert_eq!(e["PAD_NO_KEYBOARD"], "1");
-        assert_eq!(e["PS3_MUTE"], "1");
+        assert_eq!(e["PS3_INPUT_MODE"], "controller");
+        assert!(!e.contains_key("PAD_NO_KEYBOARD"));
+        assert_eq!(e["PS3_AUDIO_MUTE"], "1");
+        assert!(!e.contains_key("PS3_MUTE"));
         assert_eq!(e["PS3_AUDIO_DOWNMIX"], "itu");
         assert_eq!(e["PS3RECOMP_METAL_FPS"], "1");
         assert!(e["PS3RECOMP_MSL_CACHE"].ends_with("afro-samurai-recomp/shader-cache"));
@@ -2930,6 +3261,255 @@ mod tests {
         st.game_lang = "a b".into();
         let e = env(&st);
         assert!(!e.contains_key("PS3RECOMP_METAL_WINDOW") && !e.contains_key("PS3_LANG"));
+    }
+
+    /// The window modes, the screen, vsync, the internal resolution, MetalFX,
+    /// the filters, the input mode, the mouse, rumble and the audio options:
+    /// each from its default (nothing passed) to a change.
+    #[test]
+    fn launch_env_maps_the_new_settings() {
+        let env = |st: &Settings, input: &InputEnv| -> BTreeMap<String, String> {
+            launch_env(st, Path::new("/v"), Path::new("/p"), None, input).into_iter().collect()
+        };
+        let mut st = Settings::default();
+        st.window_mode = "borderless".into();
+        st.window_size = "1920x1080".into();
+        st.display = "DELL U2720Q".into();
+        st.vsync = false;
+        st.res_scale = "1.5".into();
+        st.upscale = "metalfx".into();
+        st.vignette = 0.5;
+        st.grain = 0.1;
+        st.lut_path = "/luts/warm.png".into();
+        st.lut_strength = 0.6;
+        st.input_mode = "keyboard".into();
+        st.mouse = true;
+        st.mouse_sens = 1.5;
+        st.mouse_invert_y = true;
+        st.mouse_deadzone = 10;
+        st.mouse_capture = false;
+        st.rumble_strength = 150;
+        st.audio_volume = 40;
+        st.audio_device = "AirPods".into();
+        // a file without [mouse] (hand-written): only what differs from the
+        // runtime's mouse defaults
+        let input = InputEnv { path: Some("/data/input.toml".into()), has_mouse_section: false };
+        let e = env(&st, &input);
+        assert_eq!(e["PS3_WINDOW_MODE"], "borderless");
+        assert_eq!(e["PS3RECOMP_METAL_WINDOW"], "1920x1080");
+        assert!(!e.contains_key("PS3_WINDOW_SIZE"), "the size stays PS3RECOMP_METAL_WINDOW");
+        assert_eq!(e["PS3_DISPLAY"], "DELL U2720Q");
+        assert_eq!(e["PS3_VSYNC"], "0");
+        assert_eq!(e["PS3_RES_SCALE"], "1.5");
+        assert_eq!(e["PS3_UPSCALE"], "metalfx");
+        assert_eq!(e["PS3_VIGNETTE"], "0.50");
+        assert_eq!(e["PS3_GRAIN"], "0.10");
+        assert_eq!(e["PS3_LUT"], "/luts/warm.png");
+        assert_eq!(e["PS3_LUT_STRENGTH"], "0.60");
+        assert_eq!(e["PS3_INPUT_MAP"], "/data/input.toml");
+        assert_eq!(e["PS3_INPUT_MODE"], "keyboard");
+        assert!(!e.contains_key("PS3_MOUSE"));
+        assert_eq!(e["PS3_MOUSE_SENS"], "1.50");
+        assert_eq!(e["PS3_MOUSE_INVERT_Y"], "1");
+        assert!(!e.contains_key("PS3_MOUSE_INVERT_X"));
+        assert_eq!(e["PS3_MOUSE_DEADZONE"], "10");
+        assert_eq!(e["PS3_MOUSE_CAPTURE"], "0");
+        assert!(!e.contains_key("PS3_RUMBLE"));
+        assert_eq!(e["PS3_RUMBLE_STRENGTH"], "150");
+        assert_eq!(e["PS3_AUDIO_VOLUME"], "40");
+        assert_eq!(e["PS3_AUDIO_DEVICE"], "AirPods");
+        assert!(!e.contains_key("PS3_AUDIO_MUTE"));
+        // muted: the mute alone (any value mutes); a device name with a line
+        // break is not passed
+        st.audio_mute = true;
+        st.audio_device = " a\nb ".into();
+        let e = env(&st, &input);
+        assert_eq!(e["PS3_AUDIO_MUTE"], "1");
+        assert!(!e.contains_key("PS3_AUDIO_VOLUME") && !e.contains_key("PS3_AUDIO_DEVICE") && !e.contains_key("PS3_MUTE"));
+
+        // the mouse camera on with a file that has a [mouse] (the port's,
+        // camera = false, and every file the launcher writes): every mouse
+        // setting is passed, so the launcher's stand
+        let mut st = Settings::default();
+        st.mouse = true;
+        let e = env(&st, &InputEnv { path: Some("/x.toml".into()), has_mouse_section: true });
+        assert_eq!(e["PS3_INPUT_MAP"], "/x.toml");
+        assert_eq!(e["PS3_MOUSE"], "1");
+        assert_eq!(e["PS3_MOUSE_SENS"], "1.00");
+        assert_eq!(e["PS3_MOUSE_INVERT_X"], "0");
+        assert_eq!(e["PS3_MOUSE_INVERT_Y"], "0");
+        assert_eq!(e["PS3_MOUSE_DEADZONE"], "30");
+        assert_eq!(e["PS3_MOUSE_CAPTURE"], "1");
+        // on with no file at all: the runtime's defaults already
+        let e = env(&st, &InputEnv::default());
+        for k in ["PS3_INPUT_MAP", "PS3_MOUSE", "PS3_MOUSE_SENS", "PS3_MOUSE_INVERT_X", "PS3_MOUSE_INVERT_Y", "PS3_MOUSE_DEADZONE", "PS3_MOUSE_CAPTURE"] {
+            assert!(!e.contains_key(k), "{k}");
+        }
+        // mouse and rumble off: nothing else of theirs; values out of range
+        // or unknown pass nothing
+        st.mouse = false;
+        st.mouse_sens = 2.0;
+        st.rumble = false;
+        st.rumble_strength = 50;
+        st.window_mode = "windowed".into();
+        st.input_mode = "both".into();
+        st.aa = "msaa".into();
+        st.res_scale = "1".into();
+        st.upscale = "fsr".into();
+        st.display = "a\nb".into();
+        st.lut_strength = 0.5; // no LUT file: no strength either
+        st.audio_volume = 100;
+        let e = env(&st, &InputEnv { path: Some("/x.toml".into()), has_mouse_section: true });
+        assert_eq!(e["PS3_MOUSE"], "0");
+        assert_eq!(e["PS3_RUMBLE"], "0");
+        for k in [
+            "PS3_MOUSE_SENS", "PS3_MOUSE_CAPTURE", "PS3_RUMBLE_STRENGTH", "PS3_WINDOW_MODE", "PS3_INPUT_MODE", "PS3_AA", "PS3_RES_SCALE",
+            "PS3_UPSCALE", "PS3_DISPLAY", "PS3_LUT", "PS3_LUT_STRENGTH", "PS3_AUDIO_VOLUME",
+        ] {
+            assert!(!e.contains_key(k), "{k}");
+        }
+        // out-of-range values are clamped
+        st.mouse = true;
+        st.mouse_sens = 99.0;
+        st.mouse_deadzone = 500;
+        st.rumble = true;
+        st.rumble_strength = 900;
+        st.vignette = 3.0;
+        let e = env(&st, &InputEnv::default());
+        assert_eq!((e["PS3_MOUSE_SENS"].as_str(), e["PS3_MOUSE_DEADZONE"].as_str(), e["PS3_RUMBLE_STRENGTH"].as_str(), e["PS3_VIGNETTE"].as_str()), ("10.00", "120", "200", "1.00"));
+    }
+
+    #[test]
+    fn res_scale_values() {
+        assert_eq!(res_scale_value(""), None);
+        assert_eq!(res_scale_value("1"), None);
+        assert_eq!(res_scale_value("1.5").as_deref(), Some("1.5"));
+        assert_eq!(res_scale_value("2").as_deref(), Some("2"));
+        assert_eq!(res_scale_value("3").as_deref(), Some("3"));
+        assert_eq!(res_scale_value("2.6").as_deref(), Some("2.5"));
+        assert_eq!(res_scale_value("5"), None);
+        assert_eq!(res_scale_value("1080p"), None);
+    }
+
+    #[test]
+    fn screens_from_the_probe() {
+        assert_eq!(parse_screens("[\"Built-in Retina Display\",\"DELL U2720Q\"]\n"), vec!["Built-in Retina Display", "DELL U2720Q"]);
+        assert!(parse_screens("oops").is_empty());
+    }
+
+    /// Play always passes a controls file when there is one: the player's
+    /// first, else the port checkout's port/input.toml.
+    #[test]
+    fn the_input_map_play_passes() {
+        let d = tmp("pick");
+        let player = d.join("data/input.toml");
+        let root = d.join("repo");
+        // neither: nothing to pass
+        assert_eq!(pick_input_map(&player, Some(&root)), InputEnv::default());
+        assert_eq!(pick_input_map(&player, None), InputEnv::default());
+        // the port's own (it has a [mouse])
+        fs::create_dir_all(root.join("port")).unwrap();
+        fs::write(root.join("port/input.toml"), "[keyboard]\ncross = \"Z\"\n\n[mouse]\ncamera = false\n").unwrap();
+        let port = InputEnv { path: Some(s(&root.join("port/input.toml"))), has_mouse_section: true };
+        assert_eq!(pick_input_map(&player, Some(&root)), port);
+        // the player's wins once it exists, with or without a port folder
+        fs::create_dir_all(player.parent().unwrap()).unwrap();
+        fs::write(&player, "[keyboard]\ncross = \"Space\"\n").unwrap();
+        let own = InputEnv { path: Some(s(&player)), has_mouse_section: false };
+        assert_eq!(pick_input_map(&player, Some(&root)), own);
+        assert_eq!(pick_input_map(&player, None), own);
+        // "Restore defaults": the port's again, the player's kept as .bak
+        reset_input_map_at(&player, &Settings::default()).unwrap();
+        assert!(!player.exists() && player.with_extension("toml.bak").is_file());
+        assert_eq!(pick_input_map(&player, Some(&root)), port);
+        reset_input_map_at(&player, &Settings::default()).unwrap(); // nothing to do
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// The player's file is the full layout: the port's defaults with the
+    /// changes on top, every control listed, and [mouse] from the settings.
+    #[test]
+    fn input_map_file_is_written_in_full() {
+        let d = tmp("input");
+        let p = d.join("sub/input.toml");
+        let mut st = Settings::default();
+        let mut b = Bindings::default();
+        b.keyboard.insert("cross".into(), vec!["Space".into()]);
+        b.keyboard.insert("r1".into(), vec![]);
+        b.mouse_buttons.insert("triangle".into(), vec!["WheelUp".into(), "WheelDown".into()]);
+        write_input_map(&p, &b, &st).unwrap();
+        let text = fs::read_to_string(&p).unwrap();
+        assert!(text.starts_with("# Afro Samurai recomp: controls"));
+        assert!(text.contains("[keyboard]\ncross    = \"Space\"\ncircle   = \"X\"\nsquare   = \"A\"\ntriangle = \"S\"\nl1       = \"Q\"\nr1       = \"\"\n"));
+        assert!(text.contains("ls_up    = \"Up\"\n") && text.contains("rs_right = \"\"\n"));
+        assert!(text.contains("[mouse_buttons]\ncross    = \"\"\ncircle   = \"\"\nsquare   = \"\"\ntriangle = \"WheelUp, WheelDown\"\n"));
+        assert!(text.contains("[controller]\ncross    = \"a\"\n"));
+        assert!(text.contains("[mouse]\ncamera      = false\nsensitivity = 1.00\ninvert_x    = false\ninvert_y    = false\ndeadzone    = 30\ncapture     = true\n"));
+        let f = input_map::parse(&text);
+        assert_eq!(f.bindings, input_map::full(&b));
+        for map in [&f.bindings.keyboard, &f.bindings.mouse_buttons, &f.bindings.controller] {
+            assert_eq!(map.len(), input_map::CONTROLS.len());
+        }
+        // the page reads the same layout back, with the port's for the reset
+        let v = input_map_view(&p);
+        assert!(v.exists && v.bindings == input_map::full(&b) && v.defaults == input_map::port_defaults());
+        let none = input_map_view(&d.join("none.toml"));
+        assert!(!none.exists && none.bindings == input_map::port_defaults());
+        // a section the launcher does not know survives the next save; a
+        // hand-written [mouse] gives way to the settings
+        fs::write(&p, format!("{}\n[future]\nx = 1\n", text.replace("camera      = false", "camera = true"))).unwrap();
+        b.keyboard.insert("r1".into(), vec!["F".into()]);
+        st.mouse = true;
+        st.mouse_sens = 1.5;
+        write_input_map(&p, &b, &st).unwrap();
+        let f = input_map::parse(&fs::read_to_string(&p).unwrap());
+        assert_eq!(f.bindings.keyboard["r1"], vec!["F"]);
+        assert_eq!(f.mouse, Some(mouse_section(&st)));
+        assert_eq!(f.other, "[future]\nx = 1\n");
+        // names that could break the file are refused, and the file stays
+        b.keyboard.insert("cross".into(), vec!["Q\"\n[x]".into()]);
+        assert!(write_input_map(&p, &b, &st).is_err());
+        assert_eq!(input_map::parse(&fs::read_to_string(&p).unwrap()).bindings.keyboard["cross"], vec!["Space"]);
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// The player's file follows the mouse settings.
+    #[test]
+    fn the_input_map_follows_the_mouse_settings() {
+        let d = tmp("sync");
+        let p = d.join("input.toml");
+        let mut st = Settings::default();
+        // mouse off, no file: none is made (the port's file applies)
+        sync_input_map(&p, &st).unwrap();
+        assert!(!p.exists());
+        // mouse on: the port's layout is written, mouse buttons unbound
+        st.mouse = true;
+        st.mouse_invert_y = true;
+        sync_input_map(&p, &st).unwrap();
+        let f = input_map::parse(&fs::read_to_string(&p).unwrap());
+        assert_eq!(f.bindings, input_map::port_defaults());
+        assert_eq!(f.mouse, Some(input_map::Mouse { camera: true, sensitivity: 1.0, invert_x: false, invert_y: true, deadzone: 30, capture: true }));
+        // nothing changed: the file is left alone
+        let before = fs::read_to_string(&p).unwrap();
+        fs::write(&p, format!("{before}# mine\n")).unwrap();
+        sync_input_map(&p, &st).unwrap();
+        assert!(fs::read_to_string(&p).unwrap().ends_with("# mine\n"));
+        // a setting changed: [mouse] is rewritten, the bindings stay
+        let mut b = Bindings::default();
+        b.keyboard.insert("cross".into(), vec!["Space".into()]);
+        write_input_map(&p, &b, &st).unwrap();
+        st.mouse_sens = 2.004;
+        st.mouse = false;
+        sync_input_map(&p, &st).unwrap();
+        let f = input_map::parse(&fs::read_to_string(&p).unwrap());
+        assert_eq!(f.bindings.keyboard["cross"], vec!["Space"]);
+        assert_eq!(f.mouse.as_ref().map(|m| (m.camera, m.sensitivity)), Some((false, 2.0)));
+        // "Restore defaults" with the mouse on writes the port's layout anew
+        st.mouse = true;
+        reset_input_map_at(&p, &st).unwrap();
+        assert!(p.with_extension("toml.bak").is_file());
+        assert_eq!(input_map::parse(&fs::read_to_string(&p).unwrap()).bindings, input_map::port_defaults());
+        fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]
@@ -2953,9 +3533,33 @@ mod tests {
 
     #[test]
     fn old_or_partial_settings_files_still_load() {
-        let st: Settings = serde_json::from_str(r#"{"uiLang":"en","aa":"fxaa","windowMode":"borderless","unknown":3}"#).unwrap();
-        assert_eq!((st.ui_lang.as_str(), st.aa.as_str()), ("en", "fxaa"));
-        assert!(st.keyboard && st.parallel_jobs && st.high_priority && st.shader_cache && st.auto_mount);
+        let st = parse_settings(r#"{"uiLang":"en","aa":"fxaa","windowMode":"borderless","unknown":3}"#).unwrap();
+        assert_eq!((st.ui_lang.as_str(), st.aa.as_str(), st.window_mode.as_str()), ("en", "fxaa", "borderless"));
+        assert!(st.parallel_jobs && st.high_priority && st.shader_cache && st.auto_mount);
+        // the new settings at their defaults
+        assert!(st.vsync && !st.mouse && st.mouse_capture && st.rumble && !st.audio_mute);
+        assert_eq!((st.mouse_sens, st.mouse_deadzone, st.rumble_strength, st.audio_volume, st.lut_strength), (1.0, 30, 100, 100, 1.0));
+        assert_eq!(st.input_mode, "both");
+        assert!(st.display.is_empty() && st.res_scale.is_empty() && st.upscale.is_empty() && st.lut_path.is_empty() && st.audio_device.is_empty());
+        assert!(parse_settings("not json").is_none() && parse_settings(r#"{"aniso":"x"}"#).is_none());
+    }
+
+    /// The two switches the window mode and the input mode replaced.
+    #[test]
+    fn old_switches_become_the_new_modes() {
+        let old = parse_settings(r#"{"fullscreen":true,"keyboard":false,"audioMute":true}"#).unwrap();
+        assert_eq!((old.window_mode.as_str(), old.input_mode.as_str()), ("fullscreen", "controller"));
+        let e: BTreeMap<String, String> = launch_env(&old, Path::new("/v"), Path::new("/p"), None, &InputEnv::default()).into_iter().collect();
+        assert_eq!((e["PS3_WINDOW_MODE"].as_str(), e["PS3_INPUT_MODE"].as_str(), e["PS3_AUDIO_MUTE"].as_str()), ("fullscreen", "controller", "1"));
+        // at their old defaults they change nothing
+        let old = parse_settings(r#"{"fullscreen":false,"keyboard":true}"#).unwrap();
+        assert_eq!((old.window_mode.as_str(), old.input_mode.as_str()), ("windowed", "both"));
+        // a file that has the new settings keeps them, whatever the old say
+        let new = parse_settings(r#"{"fullscreen":true,"windowMode":"windowed","keyboard":false,"inputMode":"keyboard"}"#).unwrap();
+        assert_eq!((new.window_mode.as_str(), new.input_mode.as_str()), ("windowed", "keyboard"));
+        // what the launcher writes has no trace of the old switches
+        let text = serde_json::to_string(&parse_settings(r#"{"fullscreen":true}"#).unwrap()).unwrap();
+        assert!(text.contains(r#""windowMode":"fullscreen""#) && !text.contains(r#""fullscreen":"#) && !text.contains(r#""keyboard":"#));
     }
 
     #[test]
@@ -2963,6 +3567,14 @@ mod tests {
         let mut found = std::collections::BTreeSet::new();
         markers_in(b"..PS3_AA\0..SPURS_JC_JOBLIST_PAR\0..PS3RECOMP_FULLSCREENX\0", &mut found);
         assert_eq!(found.into_iter().collect::<Vec<_>>(), vec!["PS3_AA".to_string(), "SPURS_JC_JOBLIST_PAR".to_string()]);
+        // the options that came with the window modes, the filters, the
+        // audio options and the controls file; a longer name is not a match
+        let mut found = std::collections::BTreeSet::new();
+        markers_in(b"PS3_RES_SCALE\0PS3_UPSCALE\0PS3_WINDOW_MODE\0PS3_GRAIN\0PS3_AUDIO_VOLUME\0PS3_INPUT_MAP\0PS3_INPUT_MAPS\0", &mut found);
+        assert_eq!(found.into_iter().collect::<Vec<_>>(), ["PS3_AUDIO_VOLUME", "PS3_GRAIN", "PS3_INPUT_MAP", "PS3_RES_SCALE", "PS3_UPSCALE", "PS3_WINDOW_MODE"]);
+        for m in ["PS3_RES_SCALE", "PS3_UPSCALE", "PS3_WINDOW_MODE", "PS3_GRAIN", "PS3_AUDIO_VOLUME", "PS3_INPUT_MAP"] {
+            assert!(FEATURE_MARKERS.contains(&m), "{m}");
+        }
     }
 
     #[test]

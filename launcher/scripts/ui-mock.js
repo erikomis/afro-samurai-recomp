@@ -10,21 +10,43 @@
 // disc). window.__UI_MOCK__ = { noBuilds: true }, { noDisc: true } or
 // { running: true }, set by an earlier init script, shows those states
 // instead; { oldBuild: true } is a build from before the window, filter,
-// shader-cache and parallel-skinning options, { appUpdate: true } a newer
-// launcher on offer and { updatedFrom: true } the start after an update.
+// shader-cache, parallel-skinning, audio and controls-file options,
+// { remapped: true } a player's input.toml with a few changes, { appUpdate:
+// true } a newer launcher on offer and { updatedFrom: true } the start after
+// an update.
 (() => {
   const flags = window.__UI_MOCK__ || {};
   const home = "/Users/player";
   const data = `${home}/Library/Application Support/afro-samurai-recomp`;
   const settings = {
     uiLang: flags.lang || "pt-BR", portDir: "", discPath: "", discImage: `${home}/Games/Afro Samurai.iso`, autoMount: true, playDir: "",
-    gameLang: "", windowSize: "1920x1080", fullscreen: false, gameIcon: false, aa: "fxaa", sharpen: 0.2, aniso: 4,
-    gammaOverride: false, gamma: 1, vibrance: 0, contrast: 1, keyboard: true, audioMute: false, audioDownmix: false,
+    gameLang: "", windowSize: "1920x1080", windowMode: "windowed", display: "", vsync: true, upscale: "", resScale: "",
+    gameIcon: false, aa: "fxaa", sharpen: 0.2, aniso: 4, gammaOverride: false, gamma: 1, vibrance: 0, contrast: 1,
+    vignette: 0, grain: 0, lutPath: "", lutStrength: 1, inputMode: "both", mouse: false, mouseSens: 1, mouseInvertY: false,
+    mouseInvertX: false, mouseDeadzone: 30, mouseCapture: true, rumble: true, rumbleStrength: 100, audioVolume: 100,
+    audioMute: false, audioDevice: "", audioDownmix: false,
     showFps: false, shaderCache: true, parallelJobs: true, highPriority: true, frameClockUs: 1000, keepAwake: true,
     video: true, ffmpegAvcodec: "", ffmpegAvutil: "", quietLog: true, extraEnv: "", rebuildSteps: [], jobs: 0,
     saveBackupsKeep: 10, autoUpdateCheck: true,
   };
-  const features = flags.oldBuild ? [] : ["PS3RECOMP_FULLSCREEN", "PS3RECOMP_MSL_CACHE", "PS3_AA", "PS3_QUIT_GRACE_MS", "SPURS_JC_JOBLIST_PAR"];
+  const features = flags.oldBuild
+    ? []
+    : ["PS3RECOMP_FULLSCREEN", "PS3RECOMP_MSL_CACHE", "PS3_AA", "PS3_AUDIO_VOLUME", "PS3_GRAIN", "PS3_INPUT_MAP", "PS3_QUIT_GRACE_MS",
+       "PS3_RES_SCALE", "PS3_UPSCALE", "PS3_WINDOW_MODE", "SPURS_JC_JOBLIST_PAR"];
+  // the port's layout (input_map.rs, port_defaults): every control, "" = unbound
+  const controls = ["cross", "circle", "square", "triangle", "l1", "r1", "l2", "r2", "l3", "r3", "start", "select",
+    "up", "down", "left", "right", "ls_up", "ls_down", "ls_left", "ls_right", "rs_up", "rs_down", "rs_left", "rs_right"];
+  const layout = (pairs) => Object.fromEntries(controls.map((c) => [c, pairs[c] ? [pairs[c]] : []]));
+  const inputDefaults = () => ({
+    keyboard: layout({ cross: "Z", circle: "X", square: "A", triangle: "S", l1: "Q", r1: "W", l2: "1", r2: "2", start: "Return", select: "Tab",
+      up: "Up", down: "Down", left: "Left", right: "Right", ls_up: "Up", ls_down: "Down", ls_left: "Left", ls_right: "Right" }),
+    mouseButtons: layout({}),
+    controller: layout({ cross: "a", circle: "b", square: "x", triangle: "y", l1: "leftshoulder", r1: "rightshoulder",
+      l2: "lefttrigger", r2: "righttrigger", l3: "leftstick", r3: "rightstick", start: "start", select: "back",
+      up: "dpup", down: "dpdown", left: "dpleft", right: "dpright" }),
+  });
+  const inputMap = { path: `${data}/input.toml`, exists: !!flags.remapped, bindings: inputDefaults(), defaults: inputDefaults() };
+  if (flags.remapped) Object.assign(inputMap.bindings.keyboard, { cross: ["Space"], ls_up: ["W"], ls_down: ["S"], ls_left: ["A"], ls_right: ["D"], square: ["J"], triangle: ["I"] });
   const now = Math.floor(Date.now() / 1000);
   const root = `${home}/Developer/afro-samurai-recomp`;
   const builds = {
@@ -58,6 +80,13 @@
       hostSupported: true, experimental: false, os: "macos", appBundle: "/Applications/Afro Samurai Launcher.app", finderIcon: false, version: "0.1.0",
       features,
     }),
+    get_input_map: () => inputMap,
+    save_input_map: (a) => {
+      Object.assign(inputMap, { exists: true, bindings: a.bindings });
+      return inputMap.path;
+    },
+    reset_input_map: () => Object.assign(inputMap, { exists: settings.mouse, bindings: inputDefaults() }),
+    list_screens: () => ["Built-in Retina Display", "DELL U2720Q"],
     disc_status: () => disc,
     find_port_dirs: () => [builds],
     check_updates: (a) => ({
@@ -93,7 +122,7 @@
       backups: [{ id: "20261022-171500-port-auto", created: now - 3600 * 6, reason: "auto", side: "port", user: "", slots: ["BLUS30264"], titles: { BLUS30264: "Chapter 1" }, bytes: 649784 }],
       portDir: "/x/savedata", rpcs3Dir: "/x/rpcs3", backupsDir: "/x/save-backups", gameRunning: false, rpcs3Running: false,
     }),
-    launch_preview: () => `cd '${data}' && PS3_VFS_ROOT='${data}/dev_hdd0/disc/BLUS30264' PS3_HDD0_ROOT='${data}/dev_hdd0' PS3_HDD1_ROOT='${data}/dev_hdd1' PS3_GAMEDATA_ROOT='${data}' PS3_BOOT_PATH=/dev_bdvd/PS3_GAME/USRDIR/EBOOT.BIN PS3_TITLE='Afro Samurai' AUDIO_ELASTIC=1 PS3RECOMP_FFMPEG_AVCODEC=/opt/homebrew/lib/libavcodec.dylib PS3RECOMP_FFMPEG_AVUTIL=/opt/homebrew/lib/libavutil.dylib PS3RECOMP_METAL_WINDOW=1920x1080 PS3_AA=fxaa PS3_SHARPEN=0.20 PS3_ANISO=4 PS3RECOMP_MSL_CACHE='${data}/shader-cache' PS3_VERBOSE=0 /usr/bin/caffeinate -i ${root}/build/BLUS30264/AfroSamuraiRecomp ${root}/game/EBOOT.elf > '${data}/last.log' 2>&1`,
+    launch_preview: () => `cd '${data}' && PS3_VFS_ROOT='${data}/dev_hdd0/disc/BLUS30264' PS3_HDD0_ROOT='${data}/dev_hdd0' PS3_HDD1_ROOT='${data}/dev_hdd1' PS3_GAMEDATA_ROOT='${data}' PS3_BOOT_PATH=/dev_bdvd/PS3_GAME/USRDIR/EBOOT.BIN PS3_TITLE='Afro Samurai' AUDIO_ELASTIC=1 PS3RECOMP_FFMPEG_AVCODEC=/opt/homebrew/lib/libavcodec.dylib PS3RECOMP_FFMPEG_AVUTIL=/opt/homebrew/lib/libavutil.dylib PS3RECOMP_METAL_WINDOW=1920x1080 PS3_AA=fxaa PS3_SHARPEN=0.20 PS3_ANISO=4 PS3_INPUT_MAP=${flags.remapped ? `'${data}/input.toml'` : `${root}/port/input.toml`} PS3_MOUSE=0 PS3RECOMP_MSL_CACHE='${data}/shader-cache' PS3_VERBOSE=0 /usr/bin/caffeinate -i ${root}/build/BLUS30264/AfroSamuraiRecomp ${root}/game/EBOOT.elf > '${data}/last.log' 2>&1`,
     read_game_log: () => ({ path: `${data}/last.log`, exists: true, size: log.length, modified: now - 120, text: log, truncated: false }),
     log_paths: () => ({ game: `${data}/last.log`, saves: "/x/savedata", play: data, data }),
     take_play_request: () => false,

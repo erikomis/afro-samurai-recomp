@@ -331,10 +331,13 @@ dressed in the game's colours. **Install the game** goes from your disc image
 to Play in one button (the Command Line Tools, Homebrew's build tools, the
 sources, `tools/install.sh`: setup, stage, decrypt, analyse, lift, SPU,
 build; it resumes where it stopped). **Play** starts the game with
-`tools/run.sh`'s environment and the settings you chose (window size and
-fullscreen, FXAA/SMAA, sharpening, 16× anisotropic filtering, gamma,
-vibrance, contrast, the shader cache, parallel skinning, the console
-language, movies, mute, the ITU fold-down, the keyboard); **Stop** quits it
+`tools/run.sh`'s environment and the settings you chose (window, fullscreen
+or borderless, the screen, vsync; internal resolution up to 4K
+(experimental), MetalFX, FXAA/SMAA, sharpening, 16× anisotropic filtering,
+gamma, vibrance, contrast, vignette, grain, a colour LUT; the shader cache,
+parallel skinning; the console language, movies, volume, output device,
+mute; remappable keyboard, mouse and controller, the mouse camera, rumble);
+**Stop** quits it
 cleanly. It also has a saves manager (backups, copies to and from RPCS3,
 .zip), debug mode with frame captures and a log summary, the game log, the
 Play shortcut, Add to Steam, and its icon in the Dock and on the running game
@@ -373,6 +376,11 @@ saves with `tools/run.sh`. Details in [`launcher/README.md`](launcher/README.md)
 | `PS3RECOMP_VTX_REMAP_HASH=1` | the vertex dedupe uses its hash for every draw again (A/B) |
 | `PS3RECOMP_MSL_CACHE=<dir>` | where the shader translations are kept (`run.sh`: `cache/msl`) |
 | `PS3_QUIT_GRACE_MS` | how long a quit waits for the game before ending it (default 3000) |
+| `PS3_RES_SCALE=1.5\|2\|3` | internal resolution: the render targets at 1080p, 1440p or 4K instead of 1280×720 (experimental; 1.5 measured -3% frame rate) |
+| `PS3_UPSCALE=metalfx`, `PS3_VSYNC=0`, `PS3_WINDOW_MODE=fullscreen\|borderless`, `PS3_DISPLAY`, `PS3_WINDOW_SIZE` | MetalFX upscaling to the window, no vsync, the window's mode, screen and size (Cmd+F toggles) |
+| `PS3_AA`, `PS3_SHARPEN`, `PS3_ANISO`, `PS3_VIBRANCE`, `PS3_CONTRAST`, `PS3_VIGNETTE`, `PS3_GRAIN`, `PS3_LUT` | the present pass: FXAA/SMAA, sharpening, anisotropic filtering, colour filters, a ReShade-layout LUT |
+| `PS3_AUDIO_VOLUME=0..100`, `PS3_AUDIO_MUTE=1`, `PS3_AUDIO_DEVICE=<name>` | master volume, mute, the output device |
+| `PS3_INPUT_MAP=<input.toml>`, `PS3_INPUT_MODE`, `PS3_MOUSE*`, `PS3_RUMBLE*` | the controls file (`run.sh`: `port/input.toml`, this port's layout), keyboard or controller only, the mouse camera, rumble |
 | `PS3_APP_ICON=<png>` | the game window's Dock icon (the launcher passes one drawn from your disc's `ICON0.PNG`) |
 | `SPURS_LFQ_NOWAKE=1` | turns off the LF-queue wake fix (for comparison) |
 | `SPURS_JG_WAIT_FOREVER=0` | the job-chain walker gives up on a closed guard after 20 s again (the skinning chain dies before New Game) |

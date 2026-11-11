@@ -277,11 +277,15 @@ bug do port e bug do jogo original são coisas diferentes.
   gerenciador de saves, modo de depuração, atalho Jogar, Adicionar à Steam,
   Parar que fecha o jogo direito, o ícone do jogo rodando no Dock a partir do
   disco do jogador (`PS3_APP_ICON`).
-- [ ] O resto das opções dos outros launchers, quando o runtime as tiver:
-  resolução interna, MetalFX, vinheta, granulado e LUTs, modos de janela e
-  vsync, volume e saída de áudio, remapeamento, câmera no mouse, vibração,
-  pacotes de textura (estão no trabalho do toolkit do port do Deadpool, ainda
-  não neste patch).
+- [x] As opções dos outros launchers, no runtime e no app (2026-11-11):
+  resolução interna (`PS3_RES_SCALE`, experimental: 1,5x conferida no jogo,
+  -3% de taxa de quadros), MetalFX, vinheta, granulado e LUTs, modos de
+  janela, tela e vsync, volume e saída de áudio, remapeamento (o
+  `port/input.toml` mantém o layout deste port como padrão), câmera no mouse,
+  vibração.
+- [ ] Testar jogando: 2x e 3x, sem bordas e uma segunda tela, a câmera no
+  mouse, teclas remapeadas, a intensidade da vibração, o volume de ouvido.
+- [ ] Pacotes de textura (`PS3_MODS_DIR`), a única opção que ainda falta.
 - [ ] Atualização do app no lugar, assinada (precisa de uma chave do updater;
   `launcher/README.md`).
 
