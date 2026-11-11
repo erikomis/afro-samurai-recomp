@@ -6,7 +6,7 @@ Status of the native Afro Samurai (`BLUS30264`) port to macOS/arm64 and what
 comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
 `[x]` = done and verified; `[ ]` = to do; "(in progress)" = being worked on.
 
-## Status at a glance (2026-11-07)
+## Status at a glance (2026-11-11)
 
 - **Gameplay renders correctly:** boot → menus → New Game or Continue → the
   3D loading screen → the opening cutscene and the combat tutorial, with
@@ -19,11 +19,22 @@ comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
   prepare-flip + flip-immediate scheme; the toolkit's HLE now returns the
   real buffer id from `cellGcmSetPrepareFlip`, runs the flip handler at the
   flip and blocks the RSX on `SEMAPHORE_ACQUIRE` (250 ms bound).
-- **Current blocker:** none known. The in-game audio needs a listening
-  check: the cellAudio mix rate was 187.5 blocks/s (correct) before and
-  after, so the odd sound is expected to have been the speed-up.
-- **Next:** confirm the audio by ear, then playing further than the first
-  minutes.
+- **In-game audio fixed:** it was slow, smeared and unintelligible in
+  windowed play. FMOD's 18 codec/DSP plugins (SPU images 2-19) were run by
+  the SPU interpreter (84% of the mixer thread) because the mixer copies
+  their text to a different local-store address than the one they were
+  lifted at; `tools/lift_fmod_plugins.sh` (run by `rebuild.sh spu`) now
+  lifts them as relocatable overlays. Confirmed by ear.
+- **Broken textures, two causes fixed:** alpha-to-coverage (`0x1D7C`) was
+  unsupported and is now emulated as an alpha test at 0.5; and the draw
+  engine mixed the title's 2D blit methods (NV3089, subchannel 5) into the
+  3D register file, wiping the alpha-test state, so grass and foliage cards
+  drew as dark rectangles. Only 3D subchannels reach the engine now
+  (`GCM_ENGINE_3D_SUBCH=1`, the port default).
+- **Current blocker:** none known. The final look at the courtyard grass is
+  pending, and other broken textures may remain unreported.
+- **Next:** confirm the grass by eye, look for other rendering errors while
+  playing further than the first minutes.
 - **Toolkit:** upstream ps3recomp v0.19.0 (`ae92407b`) plus this port's
   generic, env-gated changes, as one patch
   (`patches/ps3recomp-ae92407b-afro.patch`).
@@ -55,7 +66,7 @@ comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
   (`PS3_MAPPER_WIDE=1`): two used to come back `ENOMEM`, and the game routes
   `free()` by reservation range.
 - [x] FMOD's SPU plugin overlays run interpreted where no lifted body exists
-  (`SPU_INTERP_UNLIFTED`): the event thread no longer waits for good on the
+  (`SPU_INTERP_UNLIFTED`; now lifted, see the audio item below): the event thread no longer waits for good on the
   mixer while holding the lwmutex the main thread needs.
 - [x] First save: a negative stat-callback result answers `ERROR_CBRESULT`,
   as firmware does (`SAVEDATA_CBRESULT_STRICT=1`); the "save data appears to
@@ -90,6 +101,15 @@ comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
   `tools/jumptables.txt`): the message dispatcher's lost case `0x1F079C` and
   New Game spinning on a NULL; no "unresolved indirect call" in four runs.
 - [x] New Game reaches the 3D loading screen.
+- [x] The in-game audio: FMOD's 18 codec/DSP plugins lifted as relocatable
+  overlays (`tools/lift_fmod_plugins.sh`, run by `rebuild.sh spu`) instead of
+  interpreted; the interpreter went from 979 of 1162 mixer-thread samples to
+  none, and it sounds right by ear (`SPU_RELOC_OFF=1` for A/B).
+- [x] Alpha-to-coverage (`0x1D7C`) emulated as an alpha test at 0.5
+  (`PS3RECOMP_ENG_A2C`): grass tufts render as blades, not rectangles.
+- [x] 2D blit methods no longer reach the 3D register file
+  (`GCM_ENGINE_3D_SUBCH=1`): the alpha-test state survives the title's
+  NV3089 blits.
 
 ## Next: play it through, and make it fast
 
@@ -132,6 +152,12 @@ comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
 
 ### Graphics
 
+- [x] Grass and foliage cut-outs: alpha-to-coverage emulated, and the 2D
+  blits kept out of the 3D alpha-test state.
+- [ ] The grass in the courtyard confirmed by eye in a windowed session.
+- [ ] Look for other broken textures; test whether the texture cache's
+  full hash only every 8 frames leaves streamed textures stale
+  (`PS3RECOMP_ENG_TEXHASH_FULL=1`, unconfirmed).
 - [ ] Every rendering bug found in play fixed, each compared with a capture
   from the PS3 in the same scene.
 
@@ -141,7 +167,9 @@ comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
   the flip, the RSX waiting on the display buffer (`GCM_PREPAREFLIP_FIFO=2`,
   `GCM_FLIPCB_ONTICK=1`, `GCM_SEMA_ACQUIRE=1`). Gameplay at 29.5-30.1 frames
   a second over 260 s, no acquire timed out.
-- [ ] The in-game audio checked by ear against RPCS3.
+- [x] The in-game audio checked by ear: it sounds right (see the FMOD
+  plugin fix above). A comparison against RPCS3 and the optional
+  `PS3_AUDIO_DOWNMIX=itu` fold-down are left for later.
 - [ ] A steady 30 fps with even frame pacing (the game's target on PS3;
   the average is reached), measured with p95/p99 frame times; profile CPU, SPU, GPU, shader builds and
   streaming.

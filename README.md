@@ -12,7 +12,7 @@ through the logo movies, the main menu and New Game (or Continue), the first
 level plays in a window with a controller: Afro, Ninja Ninja and the village
 are drawn textured and lit, and the opening cutscene and the combat tutorial
 run. It has been played in a window without a crash and runs at 30 frames a
-second like the PS3; the in-game audio still needs a listening check. See
+second like the PS3, and the in-game audio now sounds right. See
 [Status](#status).
 
 | | |
@@ -28,8 +28,8 @@ and the tools of the author's other ports
 
 > [!WARNING]
 > **Early work in progress.** The first level is playable, but only its
-> start has been played, and the in-game audio has not been checked by ear
-> yet. There are no releases: you build the game yourself from your own
+> start has been played, and the grass and foliage textures still await a
+> final visual check. There are no releases: you build the game yourself from your own
 > disc. Apple-silicon macOS only. What is missing is in
 > [ROADMAP.md](ROADMAP.md).
 
@@ -47,6 +47,30 @@ game's threads → the save is loaded → audio up → the logo and credit movie
 opening cutscene and the combat tutorial, rendered correctly, controlled
 with a pad (Xbox Series X and DualSense through SDL). RPCS3 running the same
 disc was the reference for what the scene should look like.
+
+Since then (2026-11-11), the audio and the textures:
+
+- **In-game audio (slow, smeared, unintelligible in windowed play), fixed.**
+  A sample of the session showed the FMOD mixer SPU thread spending 84% of
+  its time in the SPU interpreter: the mixer DMAs each of the 18 codec and
+  DSP plugins (SPU images 2-19) from the EBOOT into a different local-store
+  address than the one they were lifted at, so every call missed the lifted
+  code and was interpreted, too slow for the mixer's 5.3 ms blocks.
+  `tools/lift_fmod_plugins.sh` (run by `rebuild.sh spu`) now lifts them as
+  relocatable overlays; the interpreter share dropped from 979 of 1162
+  mixer-thread samples to none, with the same output level. Confirmed by ear.
+  `SPU_RELOC_OFF=1` goes back to the interpreter (for comparison).
+- **Alpha-to-coverage (grass and foliage cards drawn as dark rectangles).**
+  The title cuts those cards out with alpha-to-coverage
+  (`SET_ANTI_ALIASING_CONTROL`, `0x1D7C`), which the draw engine ignored.
+  With no multisampled target it is now emulated as an alpha test at 0.5
+  (`PS3RECOMP_ENG_A2C=0` ignores the register again).
+- **2D blits wiping the 3D alpha-test state.** The title's NV3089
+  scaled-image blits (subchannel 5) landed in the 3D register file because
+  the draw engine stripped the subchannel, so every cut-out card after the
+  first blit lost its alpha test. Only 3D subchannels now reach the engine
+  (`GCM_ENGINE_3D_SUBCH=1`, set by the port): all 83 dumped draws in the
+  village read the title's alpha test (it was garbage on 966 of 1178).
 
 The two fixes that took the game from exploded geometry to a correct scene
 (2026-11-07):
@@ -88,7 +112,7 @@ What it took, with the cause of each:
   enclose the runtime's own windows, which the tracked mapper never hands out.
 - **FMOD's SPU plugins:** the FMOD Ex mixer task loads its DSP and codec
   plugins as overlays and branches into them (LS `0x25A18`). With no lifted
-  code there the job ended, and FMOD's event thread then waited for good on
+  code there the job ended (they are lifted now, see the audio fix above), and FMOD's event thread then waited for good on
   the mixer's event flag while holding the lwmutex the main thread needed.
   `SPU_INTERP_UNLIFTED` (on by default) interprets what has no lifted body, as
   the Deadpool port does.
@@ -136,15 +160,14 @@ What it took, with the cause of each:
 
 Known issues, being worked on:
 
-- **The in-game audio needs a listening check.** Gameplay now runs at 30
-  frames a second, like the PS3 and RPCS3 (29.5-30.1 measured over 260 s in
-  a headless New Game run to the combat tutorial). It used to run ~1.5x
-  too fast (~45-48): the title paces itself with libgcm's prepare-flip plus
-  flip-immediate scheme, and the toolkit's HLE completed each prepare at
-  call time, returned 0 instead of the buffer id, and did not block the RSX
-  on `SEMAPHORE_ACQUIRE`. The cellAudio mix rate was 187.5 blocks/s (correct)
-  before and after, so the odd sound is expected to have been the speed-up;
-  not yet confirmed by ear.
+- **The grass in the courtyard is not yet confirmed by eye.** The two
+  texture fixes above were checked in headless runs (alpha registers read
+  right on all 83 dumped draws; grass renders as blades in the cutscene),
+  but the final look at the courtyard grass in a windowed session is
+  pending. Other broken textures may remain and have not been reported yet.
+- **Streamed textures** may be stale: the texture cache hashes the full
+  texture only every 8 frames, which is suspected (not confirmed) for
+  textures that stream in; `PS3RECOMP_ENG_TEXHASH_FULL=1` tests it.
 - **Only the start of the first level has been played**; the rest of the
   game is untested.
 - **Keyboard and mouse** have not been tested; a controller works.
@@ -272,6 +295,11 @@ arguments are environment overrides: `tools/run.sh PS3_VERBOSE=1`.
 | `PS3_MMAPPER_FIRSTFIT=1` / `PS3_MMAPPER_ZERO=1` | first-fit instead of next-fit (measured worse) / zero pages on map |
 | `SAVEDATA_CBRESULT_STRICT=0` | `ERR_NODATA` back to `ERROR_NODATA` (the "damaged save" stop) |
 | `SPU_INTERP_UNLIFTED` | interpret SPU code with no lifted body (set by `port/main.cpp`; no off switch yet) |
+| `SPU_RELOC_OFF=1` | leaves FMOD's 18 plugin overlays to the SPU interpreter (A/B for the audio fix) |
+| `PS3RECOMP_ENG_A2C=0` | ignores alpha-to-coverage (`0x1D7C`) again, so cut-out cards draw whole |
+| `GCM_ENGINE_3D_SUBCH=0` | 2D blit methods reach the 3D register file again (grass loses its alpha test; the port sets it to 1) |
+| `PS3RECOMP_ENG_TEXHASH_FULL=1` | hashes whole textures every frame, to test stale streamed textures (unconfirmed) |
+| `PS3_AUDIO_DOWNMIX=itu` | optional stereo fold-down of the multichannel mix (off by default) |
 | `SPURS_LFQ_NOWAKE=1` | turns off the LF-queue wake fix (for comparison) |
 | `SPURS_JG_WAIT_FOREVER=0` | the job-chain walker gives up on a closed guard after 20 s again (the skinning chain dies before New Game) |
 | `SPURS_JC_EVENT_FROM_JOB=0` | a synthetic event per job again (the render thread's event is dropped) |
@@ -284,7 +312,8 @@ arguments are environment overrides: `tools/run.sh PS3_VERBOSE=1`.
 The seven defaults above (`PS3_MMAPPER_TRACK`, `PS3_MAPPER_WIDE`,
 `SPU_INTERP_UNLIFTED`, `SAVEDATA_CBRESULT_STRICT` and the three `SPURS_*`
 job switches) are set in `afro_defaults()` in
-[`port/main.cpp`](port/main.cpp) unless they are already in the environment.
+[`port/main.cpp`](port/main.cpp) unless they are already in the environment;
+so is `GCM_ENGINE_3D_SUBCH=1`.
 
 ### Diagnostics
 
@@ -310,6 +339,10 @@ B=""; for t in $(seq 85 100); do B="$B$t:0x0008,"; done
 for t in $(seq 101 2 145); do B="$B$t:0x4000,"; done
 PROBE_SNAP=10 tools/probe.sh newgame 240 PAD_SCRIPT="${B%,}" SPU_DUMP_MISS=$PWD/cache/jobs
 ```
+
+For a headless run through the menus, point `PS3_HDD0_ROOT=<empty dir>` at a
+fresh folder: an existing save adds "Continue" to the menu and breaks the
+scripted pad.
 
 A debugger does not launch the game cleanly; attaching `lldb` to the
 running process does, and guest memory is read through the `vm_base` symbol

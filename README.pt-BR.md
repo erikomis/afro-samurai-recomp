@@ -12,8 +12,8 @@ pelos vídeos de logo, pelo menu principal e pelo New Game (ou Continue), a
 primeira fase roda numa janela com controle: o Afro, o Ninja Ninja e a vila
 aparecem com textura e iluminação, e a cutscene de abertura e o tutorial de
 combate rodam. Já foi jogado numa janela sem crash e roda a 30 quadros por
-segundo como o PS3; o áudio dentro do jogo ainda precisa ser conferido de
-ouvido. Veja [Estado](#estado).
+segundo como o PS3, e o áudio dentro do jogo agora soa certo. Veja
+[Estado](#estado).
 
 | | |
 | --- | --- |
@@ -28,8 +28,8 @@ organização e as ferramentas dos outros ports do mesmo autor
 
 > [!WARNING]
 > **Trabalho em andamento, no começo.** A primeira fase é jogável, mas só o
-> começo dela foi jogado, e o áudio dentro do jogo ainda não foi conferido
-> de ouvido. Não há releases: você mesmo compila o jogo a partir do seu
+> começo dela foi jogado, e as texturas de grama e folhagem ainda aguardam a
+> conferência visual final. Não há releases: você mesmo compila o jogo a partir do seu
 > disco. Só macOS com Apple silicon. O que falta está no
 > [ROADMAP.pt-BR.md](ROADMAP.pt-BR.md).
 
@@ -64,6 +64,32 @@ correta (07/11/2026):
   apontava para o cache, então os personagens eram deformados a partir dos
   dados errados (cacos nas cutscenes).
 
+Depois disso (11/11/2026), o áudio e as texturas:
+
+- **Áudio dentro do jogo (lento, borrado, ininteligível em jogo em janela),
+  corrigido.** Uma amostra da sessão mostrou a thread SPU do mixer do FMOD
+  gastando 84% do tempo no interpretador de SPU: o mixer copia cada um dos
+  18 plugins de codec e DSP (imagens SPU 2-19) do EBOOT para um endereço de
+  local store diferente daquele em que foram traduzidos, então toda chamada
+  perdia o código traduzido e era interpretada, devagar demais para os
+  blocos de 5,3 ms do mixer. O `tools/lift_fmod_plugins.sh` (rodado pelo
+  `rebuild.sh spu`) agora os traduz como overlays relocáveis; a parte do
+  interpretador caiu de 979 de 1162 amostras da thread do mixer para
+  nenhuma, com o mesmo nível de saída. Confirmado de ouvido.
+  `SPU_RELOC_OFF=1` volta ao interpretador (para comparação).
+- **Alpha-to-coverage (cartões de grama e folhagem desenhados como
+  retângulos escuros).** O título recorta esses cartões com
+  alpha-to-coverage (`SET_ANTI_ALIASING_CONTROL`, `0x1D7C`), que o motor de
+  desenho ignorava. Sem alvo multisampled, agora é emulado como um alpha
+  test em 0,5 (`PS3RECOMP_ENG_A2C=0` volta a ignorar o registrador).
+- **Blits 2D apagando o estado de alpha test do 3D.** Os blits de imagem
+  escalada NV3089 do título (subcanal 5) caíam no arquivo de registradores
+  3D porque o motor de desenho removia o subcanal, então todo cartão
+  recortado depois do primeiro blit perdia o alpha test. Agora só os
+  subcanais 3D chegam ao motor (`GCM_ENGINE_3D_SUBCH=1`, definida pelo
+  port): os 83 draws despejados na vila leem o alpha test do título (antes
+  era lixo em 966 de 1178).
+
 Antes, no mesmo dia, o slot inicial dos vertex programs: os destinos de
 salto no microcódigo de vértice do RSX são absolutos, e traduzir todo
 programa como se começasse no slot 0 deixava os programas com salto rodando
@@ -94,7 +120,8 @@ O que foi preciso, com a causa de cada um:
   plugins de DSP e codec como overlays e pula para dentro deles (LS
   `0x25A18`). Sem código traduzido ali o job terminava, e a thread de eventos
   do FMOD esperava para sempre pela event flag do mixer segurando o lwmutex
-  de que a thread principal precisava. `SPU_INTERP_UNLIFTED` (ligado por
+  de que a thread principal precisava (hoje eles são traduzidos, veja a
+  correção do áudio acima). `SPU_INTERP_UNLIFTED` (ligado por
   padrão) interpreta o que não tem corpo traduzido, como no port do Deadpool.
 - **Primeiro save:** sem save ainda, o callback de stat do jogo responde
   `ERR_NODATA`; o firmware transforma isso em `ERROR_CBRESULT`, que é como o
@@ -142,16 +169,16 @@ O que foi preciso, com a causa de cada um:
 
 Problemas conhecidos, sendo resolvidos:
 
-- **O áudio dentro do jogo precisa ser conferido de ouvido.** A gameplay
-  agora roda a 30 quadros por segundo, como o PS3 e o RPCS3 (29,5-30,1
-  medidos em 260 s num teste headless de New Game até o tutorial de
-  combate). Antes rodava ~1,5x depressa demais (~45-48): o título dita o
-  próprio ritmo com o esquema prepare-flip + flip-immediate da libgcm, e o
-  HLE do toolkit completava cada prepare na hora da chamada, devolvia 0 em
-  vez do id do buffer e não bloqueava o RSX no `SEMAPHORE_ACQUIRE`. A taxa
-  de mixagem do cellAudio estava em 187,5 blocos/s (correta) antes e depois,
-  então o som estranho deve ter sido a aceleração; ainda não confirmado de
-  ouvido.
+- **A grama do pátio ainda não foi confirmada a olho.** As duas correções
+  de textura acima foram conferidas em testes headless (os registradores de
+  alpha saem certos nos 83 draws despejados; a grama aparece como lâminas na
+  cutscene), mas a conferência final da grama do pátio numa sessão em janela
+  está pendente. Outras texturas quebradas podem restar e ainda não foram
+  reportadas.
+- **Texturas em streaming** podem ficar desatualizadas: o cache de texturas
+  só calcula o hash da textura inteira a cada 8 quadros, o que é suspeito
+  (não confirmado) para texturas que chegam por streaming;
+  `PS3RECOMP_ENG_TEXHASH_FULL=1` testa isso.
 - **Só o começo da primeira fase foi jogado**; o resto do jogo não foi
   testado.
 - **Teclado e mouse** não foram testados; o controle funciona.
@@ -281,6 +308,11 @@ Argumentos a mais são variáveis de ambiente: `tools/run.sh PS3_VERBOSE=1`.
 | `PS3_MMAPPER_FIRSTFIT=1` / `PS3_MMAPPER_ZERO=1` | first-fit em vez de next-fit (medido pior) / zerar as páginas ao mapear |
 | `SAVEDATA_CBRESULT_STRICT=0` | `ERR_NODATA` volta a ser `ERROR_NODATA` (a parada do "save danificado") |
 | `SPU_INTERP_UNLIFTED` | interpreta o código SPU sem corpo traduzido (definida pelo `port/main.cpp`; ainda sem como desligar) |
+| `SPU_RELOC_OFF=1` | deixa os 18 overlays de plugin do FMOD com o interpretador de SPU (A/B da correção do áudio) |
+| `PS3RECOMP_ENG_A2C=0` | volta a ignorar o alpha-to-coverage (`0x1D7C`), e os cartões recortados saem inteiros |
+| `GCM_ENGINE_3D_SUBCH=0` | os métodos de blit 2D voltam ao arquivo de registradores 3D (a grama perde o alpha test; o port define 1) |
+| `PS3RECOMP_ENG_TEXHASH_FULL=1` | calcula o hash das texturas inteiras a cada quadro, para testar texturas em streaming desatualizadas (não confirmado) |
+| `PS3_AUDIO_DOWNMIX=itu` | rebaixamento estéreo opcional da mixagem multicanal (desligado por padrão) |
 | `SPURS_LFQ_NOWAKE=1` | desliga a correção de despertar da fila LF (para comparação) |
 | `SPURS_JG_WAIT_FOREVER=0` | o percorredor da cadeia de jobs volta a desistir de um guard fechado depois de 20 s (a cadeia de skinning morre antes do New Game) |
 | `SPURS_JC_EVENT_FROM_JOB=0` | volta um evento sintético por job (o evento da thread de render se perde) |
@@ -293,7 +325,8 @@ Argumentos a mais são variáveis de ambiente: `tools/run.sh PS3_VERBOSE=1`.
 Os sete padrões acima (`PS3_MMAPPER_TRACK`, `PS3_MAPPER_WIDE`,
 `SPU_INTERP_UNLIFTED`, `SAVEDATA_CBRESULT_STRICT` e as três chaves `SPURS_*`
 de jobs) são definidos em `afro_defaults()` no
-[`port/main.cpp`](port/main.cpp), a não ser que já estejam no ambiente.
+[`port/main.cpp`](port/main.cpp), a não ser que já estejam no ambiente; a
+`GCM_ENGINE_3D_SUBCH=1` também.
 
 ### Diagnóstico
 
@@ -320,6 +353,10 @@ B=""; for t in $(seq 85 100); do B="$B$t:0x0008,"; done
 for t in $(seq 101 2 145); do B="$B$t:0x4000,"; done
 PROBE_SNAP=10 tools/probe.sh newgame 240 PAD_SCRIPT="${B%,}" SPU_DUMP_MISS=$PWD/cache/jobs
 ```
+
+Para um teste headless pelos menus, aponte `PS3_HDD0_ROOT=<pasta vazia>`
+para uma pasta nova: um save existente acrescenta "Continue" ao menu e
+quebra o controle por script.
 
 Iniciar o jogo pelo depurador não funciona direito; anexar o `lldb` ao
 processo já rodando funciona, e a memória do guest é lida pelo símbolo
