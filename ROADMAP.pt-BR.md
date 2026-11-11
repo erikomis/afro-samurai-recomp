@@ -271,8 +271,19 @@ bug do port e bug do jogo original são coisas diferentes.
 
 ### App para instalar e jogar (launcher)
 
-- [ ] O launcher de desktop dos ports do Resistance: instalação em um clique
-  a partir do disco, configurações, saves, jogar sem terminal.
+- [x] O launcher de desktop dos ports do inFAMOUS 2 e do Resistance, com as
+  cores do jogo (`launcher/`, 2026-11-11): instalação em um botão a partir do
+  disco (`tools/install.sh`, retomável), as opções que este runtime tem,
+  gerenciador de saves, modo de depuração, atalho Jogar, Adicionar à Steam,
+  Parar que fecha o jogo direito, o ícone do jogo rodando no Dock a partir do
+  disco do jogador (`PS3_APP_ICON`).
+- [ ] O resto das opções dos outros launchers, quando o runtime as tiver:
+  resolução interna, MetalFX, vinheta, granulado e LUTs, modos de janela e
+  vsync, volume e saída de áudio, remapeamento, câmera no mouse, vibração,
+  pacotes de textura (estão no trabalho do toolkit do port do Deadpool, ainda
+  não neste patch).
+- [ ] Atualização do app no lugar, assinada (precisa de uma chave do updater;
+  `launcher/README.md`).
 
 ### Outras plataformas
 

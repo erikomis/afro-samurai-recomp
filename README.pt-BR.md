@@ -338,6 +338,32 @@ Ele monta a ISO, liga o `PS3_GAME` do disco à raiz do VFS e mantém o
 instalação do RPCS3, então um teste não mexe nos seus saves do RPCS3.
 Argumentos a mais são variáveis de ambiente: `tools/run.sh PS3_VERBOSE=1`.
 
+### O launcher
+
+[`launcher/`](launcher/) é um app de desktop (Tauri) para instalar e jogar
+sem terminal, feito como os launchers dos ports do inFAMOUS 2 e do
+Resistance e com as cores do jogo. **Instalar o jogo** vai da imagem do seu
+disco até o Jogar num botão só (as Command Line Tools, as ferramentas de
+build do Homebrew, as fontes, o `tools/install.sh`: setup, stage, decrypt,
+analyse, lift, SPU, build; retoma de onde parou). **Jogar** inicia o jogo com
+o ambiente do `tools/run.sh` e as opções escolhidas (tamanho da janela e tela
+cheia, FXAA/SMAA, nitidez, filtragem anisotrópica 16×, gama, vibrância,
+contraste, o cache de shaders, o skinning em paralelo, o idioma do console,
+os vídeos, o mudo, a mixagem estéreo ITU, o teclado); **Parar** fecha o jogo
+direito. Ele também tem gerenciador de saves (backups, cópias de e para o
+RPCS3, .zip), modo de depuração com captura de quadros e resumo do log, o
+log do jogo, o atalho Jogar, Adicionar à Steam, e o ícone no Dock e no jogo
+rodando desenhado a partir do seu próprio disco. Para compilar:
+
+```sh
+tools/rebuild.sh launcher   # -> build/launcher/Afro Samurai Launcher.app (Node 20+, Rust)
+```
+
+Os saves dele ficam em `~/Library/Application Support/afro-samurai-recomp`, não
+em `rpcs3/`: escolha essa pasta como pasta de jogo (Jogo > Pasta de jogo) para
+dividir os saves com o `tools/run.sh`. Detalhes em
+[`launcher/README.md`](launcher/README.md).
+
 ### Ambiente
 
 | Variável | Efeito |
@@ -363,6 +389,7 @@ Argumentos a mais são variáveis de ambiente: `tools/run.sh PS3_VERBOSE=1`.
 | `PS3RECOMP_VTX_REMAP_HASH=1` | a deduplicação de vértices volta a usar o hash em todo draw (A/B) |
 | `PS3RECOMP_MSL_CACHE=<pasta>` | onde ficam as traduções de shader (`run.sh`: `cache/msl`) |
 | `PS3_QUIT_GRACE_MS` | quanto tempo uma saída espera o jogo antes de encerrá-lo (padrão 3000) |
+| `PS3_APP_ICON=<png>` | o ícone da janela do jogo no Dock (o launcher passa um desenhado do `ICON0.PNG` do seu disco) |
 | `SPURS_LFQ_NOWAKE=1` | desliga a correção de despertar da fila LF (para comparação) |
 | `SPURS_JG_WAIT_FOREVER=0` | o percorredor da cadeia de jobs volta a desistir de um guard fechado depois de 20 s (a cadeia de skinning morre antes do New Game) |
 | `SPURS_JC_EVENT_FROM_JOB=0` | volta um evento sintético por job (o evento da thread de render se perde) |
@@ -424,7 +451,8 @@ processo já rodando funciona, e a memória do guest é lida pelo símbolo
 | Caminho | O que é |
 | --- | --- |
 | [`port/`](port/) | O port: `main.cpp` (boot, thread do guest, `afro_defaults()`), `stubs.cpp` (hook de PRX e substituições, vazio por enquanto), `CMakeLists.txt`, `spu/` (gerado pelo `tools/lift_spu.sh`: o código SPU traduzido e o `spu_workloads.c`, nunca vão para o repositório) |
-| [`tools/`](tools/) | `setup.sh`, `setup_toolkit.sh`, `export_toolkit_patch.sh`, `fetch_keys.py`, `frametimes.py`, `rebuild.sh`, `build.sh`, `run.sh`, `probe.sh`, `mount.sh`, `env.sh`, `decrypt_self.py`, `lift_fmod_plugins.sh`, `lift_spu.sh`, `lift_jobs.sh`, `augment_functions.py` e `jumptables.txt` (as tabelas de salto cujos casos viram funções) |
+| [`launcher/`](launcher/) | O app de desktop (Tauri: Rust + TypeScript); [`launcher/README.md`](launcher/README.md) |
+| [`tools/`](tools/) | `install.sh` (a instalação em um botão do launcher), `setup.sh`, `setup_toolkit.sh`, `export_toolkit_patch.sh`, `fetch_keys.py`, `frametimes.py`, `rebuild.sh`, `build.sh`, `run.sh`, `probe.sh`, `mount.sh`, `env.sh`, `decrypt_self.py`, `lift_fmod_plugins.sh`, `lift_spu.sh`, `lift_jobs.sh`, `augment_functions.py` e `jumptables.txt` (as tabelas de salto cujos casos viram funções) |
 | [`docs/`](docs/) | `game-manifest.md`: o disco, o executável, o motor, os imports e as imagens SPU; `screenshots/` |
 | [`patches/`](patches/) | O patch do toolkit sobre o ps3recomp v0.19.0 (`ae92407b`) |
 | [`ROADMAP.pt-BR.md`](ROADMAP.pt-BR.md) | Estado e próximos passos |

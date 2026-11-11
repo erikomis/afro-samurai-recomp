@@ -323,6 +323,31 @@ It mounts the ISO, links the disc's `PS3_GAME` into the VFS root and keeps
 in RPCS3's install, so a test run cannot touch your RPCS3 saves. Extra
 arguments are environment overrides: `tools/run.sh PS3_VERBOSE=1`.
 
+### The launcher
+
+[`launcher/`](launcher/) is a desktop app (Tauri) to install and play without
+a terminal, made like the inFAMOUS 2 and Resistance ports' launchers and
+dressed in the game's colours. **Install the game** goes from your disc image
+to Play in one button (the Command Line Tools, Homebrew's build tools, the
+sources, `tools/install.sh`: setup, stage, decrypt, analyse, lift, SPU,
+build; it resumes where it stopped). **Play** starts the game with
+`tools/run.sh`'s environment and the settings you chose (window size and
+fullscreen, FXAA/SMAA, sharpening, 16× anisotropic filtering, gamma,
+vibrance, contrast, the shader cache, parallel skinning, the console
+language, movies, mute, the ITU fold-down, the keyboard); **Stop** quits it
+cleanly. It also has a saves manager (backups, copies to and from RPCS3,
+.zip), debug mode with frame captures and a log summary, the game log, the
+Play shortcut, Add to Steam, and its icon in the Dock and on the running game
+drawn from your own disc. Build it with:
+
+```sh
+tools/rebuild.sh launcher   # -> build/launcher/Afro Samurai Launcher.app (Node 20+, Rust)
+```
+
+Its saves live in `~/Library/Application Support/afro-samurai-recomp`, not in
+`rpcs3/`: choose that folder as the play folder (Game > Play folder) to share
+saves with `tools/run.sh`. Details in [`launcher/README.md`](launcher/README.md).
+
 ### Environment
 
 | Variable | Effect |
@@ -348,6 +373,7 @@ arguments are environment overrides: `tools/run.sh PS3_VERBOSE=1`.
 | `PS3RECOMP_VTX_REMAP_HASH=1` | the vertex dedupe uses its hash for every draw again (A/B) |
 | `PS3RECOMP_MSL_CACHE=<dir>` | where the shader translations are kept (`run.sh`: `cache/msl`) |
 | `PS3_QUIT_GRACE_MS` | how long a quit waits for the game before ending it (default 3000) |
+| `PS3_APP_ICON=<png>` | the game window's Dock icon (the launcher passes one drawn from your disc's `ICON0.PNG`) |
 | `SPURS_LFQ_NOWAKE=1` | turns off the LF-queue wake fix (for comparison) |
 | `SPURS_JG_WAIT_FOREVER=0` | the job-chain walker gives up on a closed guard after 20 s again (the skinning chain dies before New Game) |
 | `SPURS_JC_EVENT_FROM_JOB=0` | a synthetic event per job again (the render thread's event is dropped) |
@@ -407,7 +433,8 @@ running process does, and guest memory is read through the `vm_base` symbol
 | Path | What it is |
 | --- | --- |
 | [`port/`](port/) | The port: `main.cpp` (boot, guest thread, `afro_defaults()`), `stubs.cpp` (PRX hook and overrides, empty for now), `CMakeLists.txt`, `spu/` (written by `tools/lift_spu.sh`: the lifted SPU code and `spu_workloads.c`, never committed) |
-| [`tools/`](tools/) | `setup.sh`, `setup_toolkit.sh`, `export_toolkit_patch.sh`, `fetch_keys.py`, `frametimes.py`, `rebuild.sh`, `build.sh`, `run.sh`, `probe.sh`, `mount.sh`, `env.sh`, `decrypt_self.py`, `lift_fmod_plugins.sh`, `lift_spu.sh`, `lift_jobs.sh`, `augment_functions.py` and `jumptables.txt` (the jump tables whose cases are lifted as functions) |
+| [`launcher/`](launcher/) | The desktop app (Tauri: Rust + TypeScript); [`launcher/README.md`](launcher/README.md) |
+| [`tools/`](tools/) | `install.sh` (the launcher's one-button install), `setup.sh`, `setup_toolkit.sh`, `export_toolkit_patch.sh`, `fetch_keys.py`, `frametimes.py`, `rebuild.sh`, `build.sh`, `run.sh`, `probe.sh`, `mount.sh`, `env.sh`, `decrypt_self.py`, `lift_fmod_plugins.sh`, `lift_spu.sh`, `lift_jobs.sh`, `augment_functions.py` and `jumptables.txt` (the jump tables whose cases are lifted as functions) |
 | [`docs/`](docs/) | `game-manifest.md`: the disc, the executable, the engine, the imports and the SPU images; `screenshots/` |
 | [`patches/`](patches/) | The toolkit patch over ps3recomp v0.19.0 (`ae92407b`) |
 | [`ROADMAP.md`](ROADMAP.md) | Status and next steps |
