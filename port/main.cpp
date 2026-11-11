@@ -49,7 +49,11 @@
 
 #ifndef _WIN32
 #include <sys/mman.h>   /* mmap: the guest arena, see alloc_guest_vm */
+#include <signal.h>
+#include <unistd.h>     /* _exit */
 #endif
+
+static int quit_signal_take(void);   /* SIGINT/SIGTERM asked to quit (below) */
 
 #if defined(__APPLE__)
 #include <pthread.h>
@@ -90,6 +94,8 @@ int      ppu_run(uint32_t entry_opd, uint32_t stack_top);
 void     ps3_load_prx_modules(void);
 
 extern const char* ppu_vfs_root;              /* host dir the PS3 mount points map into */
+
+void     ps3_host_quit(const char* why);      /* cellSysutil.c: REQUEST_EXITGAME, then exit 0 */
 
 /* The status the guest handed to sys_process_exit. A title that exits that way
  * never returns through ppu_run, so this is only read on the path where the
@@ -287,6 +293,7 @@ static DWORD WINAPI frame_clock(LPVOID)
     for (;;) {
         frame_clock_wait(clock_us);
         const unsigned long long now = mono_us();
+        if (quit_signal_take()) ps3_host_quit("SIGINT/SIGTERM");
 
         int fired = 0;
         while ((long long)(now - next_tick) >= 0 && fired < 240) {
@@ -324,6 +331,13 @@ static DWORD WINAPI frame_clock(LPVOID)
                 last_pump = now;
                 if (rsx_backend_pump() != 0) {
                     rsx_ok = 0;              /* window closed */
+                    /* Quit the way the console's Quit Game does (and Cmd+Q
+                     * already did): REQUEST_EXITGAME to the title's sysutil
+                     * callbacks, then exit 0 after PS3_QUIT_GRACE_MS, never
+                     * while a save is being written. Without it the guest
+                     * kept running with no window, the process left behind
+                     * until killed. */
+                    ps3_host_quit("window closed");
                     continue;
                 }
             }
@@ -451,6 +465,31 @@ static void text_ro_fault(int sig, siginfo_t* si, void* uc)
     if ((p.sa_flags & SA_SIGINFO) && p.sa_sigaction) { p.sa_sigaction(sig, si, uc); return; }
     signal(sig, SIG_DFL);
 }
+/* Ctrl+C in the terminal, or a plain kill: the first SIGINT/SIGTERM asks the
+ * game to quit as Quit Game does (ps3_host_quit, from the vblank loop: a
+ * signal handler may not print or start threads); a second one ends the
+ * process at once. Before this, either signal killed it mid-frame, a save
+ * being written included. */
+static volatile sig_atomic_t s_quit_sig;
+static void quit_signal(int sig)
+{
+    if (s_quit_sig) _exit(128 + sig);
+    s_quit_sig = sig;
+}
+static int quit_signal_take(void)
+{
+    static int taken;
+    if (!s_quit_sig || taken) return 0;
+    taken = 1;
+    return 1;
+}
+static void quit_signal_arm(void)
+{
+    struct sigaction sa; memset(&sa, 0, sizeof sa);
+    sa.sa_handler = quit_signal; sigemptyset(&sa.sa_mask);
+    sigaction(SIGINT, &sa, nullptr);
+    sigaction(SIGTERM, &sa, nullptr);
+}
 static void text_ro_arm(void)
 {
     const char* e = getenv("AFRO_TEXT_RO");
@@ -466,6 +505,8 @@ static void text_ro_arm(void)
             (unsigned)(s_ro_hi - (uintptr_t)vm_base), rc);
 }
 #else
+static int  quit_signal_take(void) { return 0; }
+static void quit_signal_arm(void) {}
 static void text_ro_arm(void) {}
 #endif
 
@@ -610,6 +651,7 @@ int main(int argc, char** argv)
     ppu_fs_register();       /* cellFs over the game directory */
     lv2_init_syscalls();     /* the lv2 syscall table */
     text_ro_arm();           /* AFRO_TEXT_RO=1 diagnostic */
+    quit_signal_arm();       /* SIGINT/SIGTERM: quit like Quit Game */
 
     /* Install the guest-callback hook, then start the frame clock. It no-ops
      * until the title registers its vblank and flip handlers during init. */
