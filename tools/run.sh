@@ -33,8 +33,12 @@ mkdir -p "$PS3_HDD1_ROOT/cache"
 # cellSaveData appends /dev_hdd0/home/00000001/savedata to this root.
 export PS3_GAMEDATA_ROOT=${PS3_GAMEDATA_ROOT:-$AFRO_ROOT/rpcs3}
 export PS3_BOOT_PATH=${PS3_BOOT_PATH:-/dev_bdvd/PS3_GAME/USRDIR/EBOOT.BIN}
-export RSX_MSL_CACHE=${RSX_MSL_CACHE:-$AFRO_ROOT/cache/msl}
-mkdir -p "$RSX_MSL_CACHE"
+# The guest shaders' MSL translations, kept across runs: a first-seen shader
+# costs a glslang + spirv-cross pass (most of a first use) only once. The
+# toolkit reads PS3RECOMP_MSL_CACHE (rsx_shader_msl.cpp); stale files from
+# another translator build are misses, never served.
+export PS3RECOMP_MSL_CACHE=${PS3RECOMP_MSL_CACHE:-$AFRO_ROOT/cache/msl}
+mkdir -p "$PS3RECOMP_MSL_CACHE"
 # Firmware tree, read-only: FMOD may load its MP3 codec from /dev_flash.
 [ -d "$HOME/Library/Application Support/rpcs3/dev_flash" ] && \
     export PS3_DEV_FLASH="${PS3_DEV_FLASH:-$HOME/Library/Application Support/rpcs3/dev_flash}"
