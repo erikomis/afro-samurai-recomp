@@ -1,3 +1,25 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d68ec3ee..8c11c498 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -516,6 +516,17 @@ if(PS3RECOMP_BUILD_TESTS)
+     target_include_directories(test_vertex_current_color PRIVATE include libs/video)
+     add_test(NAME vertex_current_color COMMAND test_vertex_current_color)
+ 
++    # Vertex dedupe: the direct-map, identity and hash paths give the same
++    # unique references and occurrence map as a naive reference.
++    add_executable(test_vertex_remap
++        libs/video/tests/test_vertex_remap.c
++        libs/video/rsx_vertex_compact.c
++        libs/video/rsx_dispatch.c)
++    target_include_directories(test_vertex_remap PRIVATE include libs/video)
++    add_test(NAME vertex_remap COMMAND test_vertex_remap)
++    add_test(NAME vertex_remap_hash COMMAND test_vertex_remap)
++    set_tests_properties(vertex_remap_hash PROPERTIES ENVIRONMENT PS3RECOMP_VTX_REMAP_HASH=1)
++
+ 
+     find_package(Python3 3.10 COMPONENTS Interpreter QUIET)
+     if(Python3_Interpreter_FOUND)
 diff --git a/libs/audio/cellAudio.c b/libs/audio/cellAudio.c
 index f231ea26..78b83873 100644
 --- a/libs/audio/cellAudio.c
@@ -797,7 +819,7 @@ index f073f327..2075f469 100644
      return &s_display_buffers[id];
  }
 diff --git a/libs/video/rsx_draw_engine.c b/libs/video/rsx_draw_engine.c
-index 19548e0a..89761b26 100644
+index 19548e0a..52ef4457 100644
 --- a/libs/video/rsx_draw_engine.c
 +++ b/libs/video/rsx_draw_engine.c
 @@ -17,6 +17,7 @@
@@ -833,7 +855,40 @@ index 19548e0a..89761b26 100644
      rs->rt_fp16 = sf.color_format == RSX_SURFACE_FMT_F_W16Z16Y16X16;
      rs->blend_enable = rsx_dsp_reg(rsx, M_BLEND_ENABLE) & 1;
      const u32 sfac = rsx_dsp_reg(rsx, M_BLEND_SFACTOR);
-@@ -2173,6 +2192,7 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
+@@ -1317,15 +1336,28 @@ static u64 eng_texture_content_hash(u32 location, u32 offset, u32 span,
+     if (rsx_tiling_active()) rsx_tiling_footprint(location, offset, span, &offset, &span);
+     const u8* src = span ? eng_guest_ptr(NULL, location, offset, span) : NULL;
+     if (!src) { *readable = 0; return 0; }
+-    u64 hash = 1469598103934665603ull;
++    /* Four FNV lanes over interleaved words, folded at the end: one lane's
++     * multiply chain was the whole cost (latency, not bandwidth), and four
++     * independent ones run side by side. Each step is a bijection of its
++     * lane's state, so a change to any one word still changes the result. */
++    const u64 P = 1099511628211ull;
++    u64 h0 = 1469598103934665603ull, h1 = h0 ^ 1u, h2 = h0 ^ 2u, h3 = h0 ^ 3u;
+     u32 i = 0;
++    for (; i + 32 <= span; i += 32) {
++        u64 w[4];
++        memcpy(w, src + i, sizeof(w));
++        h0 = (h0 ^ w[0]) * P;
++        h1 = (h1 ^ w[1]) * P;
++        h2 = (h2 ^ w[2]) * P;
++        h3 = (h3 ^ w[3]) * P;
++    }
++    u64 hash = ((((h0 * P) ^ h1) * P ^ h2) * P) ^ h3;
+     for (; i + 8 <= span; i += 8) {
+         u64 word;
+         memcpy(&word, src + i, sizeof(word));
+-        hash ^= word;
+-        hash *= 1099511628211ull;
++        hash = (hash ^ word) * P;
+     }
+-    for (; i < span; i++) { hash ^= src[i]; hash *= 1099511628211ull; }
++    for (; i < span; i++) hash = (hash ^ src[i]) * P;
+     *readable = 1;
+     return hash;
+ }
+@@ -2173,6 +2205,7 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
       * identity only for a program that tests them. */
      const int vp_branch_bits_used = !fixed && rsx_vp_uses_branch_bits(vp_uc, vp_instrs * 16u);
      const u32 vp_branch_bits = vp_branch_bits_used ? rsx_dsp_reg(&g.rsx, 0x1FF8u) : 0;
@@ -841,7 +896,7 @@ index 19548e0a..89761b26 100644
      const u32 ucp = fixed ? 0 : eng_user_clip_key();
      const u32 dbz = fixed ? 0 : s_dbz.unit;   /* eng_depth_bounds_prepare: unit + 1 */
  
-@@ -2238,6 +2258,9 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
+@@ -2238,6 +2271,9 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
          key = eng_fnv1a(&fixed_tag, sizeof fixed_tag, key);
      } else {
          key = eng_vp_hash(vp_uc, vp_instrs * 16u, key);
@@ -851,7 +906,7 @@ index 19548e0a..89761b26 100644
          if (vp_branch_bits_used) key = eng_fnv1a(&vp_branch_bits, sizeof vp_branch_bits, key);
          key = rsx_fp_structural_hash(fp_uc, fp_size, key);
          if (!key) return 0;
-@@ -2288,6 +2311,14 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
+@@ -2288,6 +2324,14 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
          snprintf(s_ps_hlsl, sizeof s_ps_hlsl, "%s", kEngFixedPS);
      } else {
          rsx_vp_set_branch_bits(vp_branch_bits);
@@ -866,7 +921,7 @@ index 19548e0a..89761b26 100644
          vi = rsx_vp_decompile_compact_ex(vp_uc, vp_instrs * 16u, vtex_mask,
                                           layout->mask, s_vs_hlsl,
                                           sizeof s_vs_hlsl);
-@@ -3122,6 +3153,9 @@ static void pd_note(const u32* targets, u32 n_targets, u32 zslot,
+@@ -3122,6 +3166,9 @@ static void pd_note(const u32* targets, u32 n_targets, u32 zslot,
          return;
      }
      if (s_pd.draws_log) {
@@ -876,7 +931,7 @@ index 19548e0a..89761b26 100644
          fprintf(s_pd.draws_log, "pass %03u draw %u: pipe %u cmask %08X blend %u %X/%X"
                  " dt %u dw %u at %u |", s_pd.pass, s_pd.draws, pipeline, rs->color_mask,
                  rs->blend_enable, rs->sf_rgb, rs->df_rgb, rs->depth_test, rs->depth_write,
-@@ -3141,6 +3175,33 @@ static void pd_note(const u32* targets, u32 n_targets, u32 zslot,
+@@ -3141,6 +3188,33 @@ static void pd_note(const u32* targets, u32 n_targets, u32 zslot,
              fprintf(s_pd.draws_log, " t%u %u:0x%08X f%02X %ux%u", u, t.location, t.offset,
                      t.format & 0xFFu, t.width, t.height);
          }
@@ -951,6 +1006,205 @@ index 0ba88a8c..4fbef301 100644
              s_eng_checked_completed = [cb status] == MTLCommandBufferStatusCompleted &&
                                        ![cb error] && !s_eng_dropped && !s_eng_encoding_failed;
              if (!s_eng_checked_completed) s_eng_encoding_failed = 1;
+diff --git a/libs/video/rsx_vertex_compact.c b/libs/video/rsx_vertex_compact.c
+index 0695bb93..1c49b9ed 100644
+--- a/libs/video/rsx_vertex_compact.c
++++ b/libs/video/rsx_vertex_compact.c
+@@ -391,7 +391,17 @@ int rsx_vertex_fetch_many(
+         case RSX_VTX_TYPE_SINT16:
+             RSX_FETCH_LOOP(v[c] = (float)(s16)((src[c * 2] << 8) | src[c * 2 + 1]))
+             break;
+-        default:   /* RSX_VTX_TYPE_CMP32: one packed word, whatever the size */
++        case RSX_VTX_TYPE_CMP32:   /* one packed 11:11:10 word, whatever the size;
++                                    * rsx_vertex_decode_element's decode, in the loop */
++            RSX_FETCH_LOOP(if (c == 0) {
++                const u32 word = ((u32)src[0] << 24) | ((u32)src[1] << 16) |
++                                 ((u32)src[2] << 8) | (u32)src[3];
++                v[0] = (float)((s32)(word << 21) >> 21) / 1023.0f;
++                v[1] = (float)((s32)(word << 10) >> 21) / 1023.0f;
++                v[2] = (float)((s32)word >> 22) / 511.0f;
++            })
++            break;
++        default:
+             for (u32 i = 0; i < count; i++)
+                 if (!rsx_vertex_fetch_attr_value(plan, attr, &refs[i],
+                         (float*)(out + (size_t)i * stride + slot * 16u)))
+@@ -432,6 +442,71 @@ int rsx_vertex_remap_build(
+         remap->occurrence_capacity = count;
+     }
+ 
++    /* The common draw: one base index and a vertex range not much wider than
++     * the reference count (an indexed mesh, or a plain sequential run). Same
++     * result as the hash below -- unique vertices in first-use order -- from
++     * a direct map, and a sequential run is the identity outright.
++     * PS3RECOMP_VTX_REMAP_HASH=1 keeps every draw on the hash (A/B). */
++    static int hash_only = -1;
++    if (hash_only < 0) {
++        const char* e = getenv("PS3RECOMP_VTX_REMAP_HASH");
++        hash_only = e && *e == '1';
++    }
++    if (!hash_only) {
++        const u32 base = refs[0].base_index;
++        u32 lo = refs[0].vertex_id, hi = lo;
++        int same_base = 1, sequential = 1;
++        for (u32 i = 1; i < count; i++) {
++            const u32 v = refs[i].vertex_id;
++            same_base &= refs[i].base_index == base;
++            sequential &= v == refs[0].vertex_id + i;
++            if (v < lo) lo = v;
++            if (v > hi) hi = v;
++        }
++        const u64 range = (u64)hi - lo + 1u;
++        if (same_base && sequential) {
++            for (u32 i = 0; i < count; i++)
++                remap->occurrence_to_unique[i] = i;
++            return 1;                        /* *unique_count = count */
++        }
++        if (same_base && range <= (1u << 20) && range <= (u64)count * 8u + 65536u) {
++            if (range > remap->direct_capacity) {
++                u32* value = (u32*)realloc(remap->direct_value, (size_t)range * sizeof(u32));
++                if (!value)
++                    return 0;
++                remap->direct_value = value;
++                u32* tag = (u32*)realloc(remap->direct_tag, (size_t)range * sizeof(u32));
++                if (!tag)
++                    return 0;
++                remap->direct_tag = tag;
++                memset(remap->direct_tag, 0, (size_t)range * sizeof(u32));
++                remap->direct_capacity = (u32)range;
++                remap->direct_generation = 0u;
++            }
++            if (++remap->direct_generation == 0u) {
++                memset(remap->direct_tag, 0, (size_t)remap->direct_capacity * sizeof(u32));
++                remap->direct_generation = 1u;
++            }
++            const u32 gen = remap->direct_generation;
++            u32* const tag = remap->direct_tag;
++            u32* const value = remap->direct_value;
++            u32* const occ = remap->occurrence_to_unique;
++            u32 unique = 0;
++            for (u32 occurrence = 0; occurrence < count; occurrence++) {
++                const rsx_vertex_ref ref = refs[occurrence];
++                const u32 k = ref.vertex_id - lo;
++                if (tag[k] != gen) {
++                    tag[k] = gen;
++                    value[k] = unique;
++                    refs[unique++] = ref;
++                }
++                occ[occurrence] = value[k];
++            }
++            *unique_count = unique;
++            return 1;
++        }
++    }
++
+     if (count > UINT_MAX / 2u)
+         return 0;
+     u32 slot_capacity = 16u;
+@@ -501,6 +576,8 @@ void rsx_vertex_remap_destroy(rsx_vertex_remap* remap)
+         return;
+     free(remap->occurrence_to_unique);
+     free(remap->slots);
++    free(remap->direct_value);
++    free(remap->direct_tag);
+     memset(remap, 0, sizeof(*remap));
+ }
+ 
+diff --git a/libs/video/rsx_vertex_compact.h b/libs/video/rsx_vertex_compact.h
+index fe3e1948..fc540a52 100644
+--- a/libs/video/rsx_vertex_compact.h
++++ b/libs/video/rsx_vertex_compact.h
+@@ -44,6 +44,13 @@ typedef struct rsx_vertex_remap {
+     rsx_vertex_remap_slot* slots;
+     u32 slot_capacity;
+     u32 generation;
++    /* Direct map for a draw whose references share one base index and span
++     * a small vertex range: unique index and generation tag per vertex_id -
++     * direct_lo, no hashing or probing. */
++    u32* direct_value;
++    u32* direct_tag;
++    u32 direct_capacity;
++    u32 direct_generation;
+ } rsx_vertex_remap;
+ 
+ typedef struct rsx_vertex_fetch_attr {
+diff --git a/libs/video/tests/test_vertex_remap.c b/libs/video/tests/test_vertex_remap.c
+new file mode 100644
+index 00000000..41ceb72f
+--- /dev/null
++++ b/libs/video/tests/test_vertex_remap.c
+@@ -0,0 +1,71 @@
++/* rsx_vertex_remap_build: unique references in first-use order and an
++ * occurrence map back to them, the same whichever path takes a draw (the
++ * direct map for one base index over a small range, the identity for a
++ * sequential run, the hash otherwise), checked against a naive reference on
++ * random draws of every shape.
++ *
++ *   cc -I libs/video -I include libs/video/tests/test_vertex_remap.c \
++ *      libs/video/rsx_vertex_compact.c libs/video/rsx_dispatch.c (ctest: vertex_remap)
++ */
++#include "rsx_vertex_compact.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++static unsigned s_seed = 12345u;
++static u32 rnd(void) { s_seed = s_seed * 1103515245u + 12345u; return s_seed >> 8; }
++
++/* O(n^2) reference: first occurrence of each (vertex_id, base_index). */
++static u32 naive(const rsx_vertex_ref* in, u32 n, rsx_vertex_ref* uniq, u32* occ)
++{
++    u32 u = 0;
++    for (u32 i = 0; i < n; i++) {
++        u32 j = 0;
++        while (j < u && !(uniq[j].vertex_id == in[i].vertex_id && uniq[j].base_index == in[i].base_index)) j++;
++        if (j == u) uniq[u++] = in[i];
++        occ[i] = j;
++    }
++    return u;
++}
++
++int main(void)
++{
++    rsx_vertex_remap remap;
++    memset(&remap, 0, sizeof remap);
++    enum { MAXN = 3000 };
++    static rsx_vertex_ref refs[MAXN], orig[MAXN], uniq[MAXN];
++    static u32 occ[MAXN];
++    int fails = 0;
++    for (int iter = 0; iter < 4000; iter++) {
++        const u32 n = 2 + rnd() % (MAXN - 2);
++        const int shape = iter % 5;
++        const u32 base = rnd() % 4 ? 0u : rnd();
++        const u32 lo = rnd() % 4 ? rnd() % 1000u : rnd();
++        for (u32 i = 0; i < n; i++) {
++            u32 v, b = base;
++            switch (shape) {
++            case 0: v = lo + i; break;                                /* sequential run */
++            case 1: v = lo + rnd() % (n / 3 + 1); break;              /* indexed mesh */
++            case 2: v = lo + rnd() % 2000000u; break;                 /* wide range: hash */
++            case 3: v = lo + rnd() % 64u; b = base + (rnd() % 2); break; /* two bases: hash */
++            default: v = (i % 7 == 3) ? lo + i - 1 : lo + i; break;   /* almost sequential */
++            }
++            refs[i].vertex_id = v; refs[i].base_index = b;
++        }
++        memcpy(orig, refs, n * sizeof *refs);
++        u32 unique = 0;
++        if (!rsx_vertex_remap_build(&remap, refs, n, &unique)) { printf("build failed\n"); return 1; }
++        const u32 want = naive(orig, n, uniq, occ);
++        int bad = unique != want;
++        for (u32 i = 0; !bad && i < want; i++)
++            bad = refs[i].vertex_id != uniq[i].vertex_id || refs[i].base_index != uniq[i].base_index;
++        for (u32 i = 0; !bad && i < n; i++)
++            bad = rsx_vertex_remap_index(&remap, i) != occ[i];
++        if (bad && fails++ < 5)
++            printf("FAIL iter %d shape %d n %u: unique %u want %u\n", iter, shape, n, unique, want);
++    }
++    rsx_vertex_remap_destroy(&remap);
++    printf("%s (%d failures)\n", fails ? "FAILED" : "ok", fails);
++    return fails != 0;
++}
 diff --git a/runtime/ppu/ppu_fs.cpp b/runtime/ppu/ppu_fs.cpp
 index 37e37454..dcd4a947 100644
 --- a/runtime/ppu/ppu_fs.cpp
