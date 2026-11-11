@@ -712,7 +712,7 @@ index f073f327..db54fbd3 100644
      return &s_display_buffers[id];
  }
 diff --git a/libs/video/rsx_draw_engine.c b/libs/video/rsx_draw_engine.c
-index 19548e0a..180354ff 100644
+index 19548e0a..d6248a5f 100644
 --- a/libs/video/rsx_draw_engine.c
 +++ b/libs/video/rsx_draw_engine.c
 @@ -17,6 +17,7 @@
@@ -723,7 +723,32 @@ index 19548e0a..180354ff 100644
  #include "rsx_vp_decompiler.h"
  
  #include <stdio.h>
-@@ -2173,6 +2174,7 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
+@@ -431,6 +432,24 @@ void rsx_draw_engine_decode_render_state(const rsx_dispatch* rsx,
+     rsx_dsp_surface sf;
+     rsx_dsp_get_surface(rsx, &sf);
+     rs->alpha_ref_format = sf.color_format;
++    /* Alpha-to-coverage (SET_ANTI_ALIASING_CONTROL 0x1D7C: bit 0 MSAA on,
++     * bit 4 alpha to coverage). There is no multisampled target here, so the
++     * coverage collapses to an alpha test at one half -- the sample count a
++     * 2x target would keep. Afro Samurai cuts its grass and foliage cards out
++     * this way; ignored, every tuft drew as a dark rectangle. Only when the
++     * title's own alpha test is off. PS3RECOMP_ENG_A2C=0 ignores it again. */
++    { static int a2c = -1;
++      if (a2c < 0) { const char* e = getenv("PS3RECOMP_ENG_A2C"); a2c = !(e && *e == '0'); }
++      const u32 aa = rsx_dsp_reg(rsx, 0x1D7Cu);
++      if (a2c && (aa & 0x11u) == 0x11u && !rs->alpha_test_enable) {
++          rs->alpha_test_enable = 1;
++          rs->alpha_func = 0x0206u;   /* GEQUAL */
++          rs->alpha_ref_raw = rs->alpha_ref_format == 14u ? 0x3800u      /* half 0.5 */
++                            : (rs->alpha_ref_format == 15u || rs->alpha_ref_format == 16u)
++                              ? 0x3F000000u : 0x80u;
++          static int said;
++          if (!said) { said = 1; fprintf(stderr, "[rsx engine] alpha-to-coverage seen (0x1D7C = 0x%08X): emulated as alpha >= 0.5\n", aa); }
++      } }
+     rs->rt_fp16 = sf.color_format == RSX_SURFACE_FMT_F_W16Z16Y16X16;
+     rs->blend_enable = rsx_dsp_reg(rsx, M_BLEND_ENABLE) & 1;
+     const u32 sfac = rsx_dsp_reg(rsx, M_BLEND_SFACTOR);
+@@ -2173,6 +2192,7 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
       * identity only for a program that tests them. */
      const int vp_branch_bits_used = !fixed && rsx_vp_uses_branch_bits(vp_uc, vp_instrs * 16u);
      const u32 vp_branch_bits = vp_branch_bits_used ? rsx_dsp_reg(&g.rsx, 0x1FF8u) : 0;
@@ -731,7 +756,7 @@ index 19548e0a..180354ff 100644
      const u32 ucp = fixed ? 0 : eng_user_clip_key();
      const u32 dbz = fixed ? 0 : s_dbz.unit;   /* eng_depth_bounds_prepare: unit + 1 */
  
-@@ -2238,6 +2240,9 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
+@@ -2238,6 +2258,9 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
          key = eng_fnv1a(&fixed_tag, sizeof fixed_tag, key);
      } else {
          key = eng_vp_hash(vp_uc, vp_instrs * 16u, key);
@@ -741,7 +766,7 @@ index 19548e0a..180354ff 100644
          if (vp_branch_bits_used) key = eng_fnv1a(&vp_branch_bits, sizeof vp_branch_bits, key);
          key = rsx_fp_structural_hash(fp_uc, fp_size, key);
          if (!key) return 0;
-@@ -2288,6 +2293,14 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
+@@ -2288,6 +2311,14 @@ static u32 eng_pipeline_get(const rsx_vertex_layout_plan* layout,
          snprintf(s_ps_hlsl, sizeof s_ps_hlsl, "%s", kEngFixedPS);
      } else {
          rsx_vp_set_branch_bits(vp_branch_bits);
@@ -756,7 +781,7 @@ index 19548e0a..180354ff 100644
          vi = rsx_vp_decompile_compact_ex(vp_uc, vp_instrs * 16u, vtex_mask,
                                           layout->mask, s_vs_hlsl,
                                           sizeof s_vs_hlsl);
-@@ -3141,6 +3154,33 @@ static void pd_note(const u32* targets, u32 n_targets, u32 zslot,
+@@ -3141,6 +3172,33 @@ static void pd_note(const u32* targets, u32 n_targets, u32 zslot,
              fprintf(s_pd.draws_log, " t%u %u:0x%08X f%02X %ux%u", u, t.location, t.offset,
                      t.format & 0xFFu, t.width, t.height);
          }
