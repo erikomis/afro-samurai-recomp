@@ -15,6 +15,9 @@
 #            the skinning jobs (lift_jobs.sh) and FMOD's plugins as relocatable
 #            overlays (lift_fmod_plugins.sh)
 #   build    configure once if needed, then tools/build.sh (resource guards)
+#   launcher only when named (tools/rebuild.sh launcher): the desktop app in
+#            launcher/ (Tauri; needs Node 20+ and Rust) -> build/launcher/
+#            Afro Samurai Launcher.app. CARGO_TARGET_DIR is honoured.
 #
 # Environment: see tools/env.sh. JOBS controls lifting; BUILD_JOBS controls build;
 # CHUNKS the number of lifted translation units (default 12).
@@ -79,8 +82,27 @@ for s in $steps; do
         echo ""
         echo "run it:"
         echo "  tools/run.sh" ;;
+    launcher)
+        say "launcher (the desktop app)"
+        command -v npm >/dev/null || { echo "npm not found: install Node 20+ (brew install node)" >&2; exit 1; }
+        command -v cargo >/dev/null || PATH=$HOME/.cargo/bin:$PATH
+        command -v cargo >/dev/null || { echo "cargo not found: install Rust (https://rustup.rs)" >&2; exit 1; }
+        # Release builds keep their symbols: with Cargo's default stripping
+        # (debuginfo) rustc cannot load some of the stripped proc-macro
+        # libraries on macOS 27 ("can't find crate for tauri_macros" /
+        # "phf_macros"), as the Resistance port found with its build scripts.
+        # Set either to override.
+        ( cd "$AFRO_ROOT/launcher" && npm ci --no-audit --no-fund &&
+          CARGO_PROFILE_RELEASE_STRIP=${CARGO_PROFILE_RELEASE_STRIP:-false} \
+          CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP=${CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP:-false} \
+          npx tauri build --bundles app )
+        tgt=${CARGO_TARGET_DIR:-$AFRO_ROOT/launcher/src-tauri/target}
+        mkdir -p "$AFRO_ROOT/build/launcher"
+        rm -rf "$AFRO_ROOT/build/launcher/Afro Samurai Launcher.app"
+        cp -R "$tgt/release/bundle/macos/Afro Samurai Launcher.app" "$AFRO_ROOT/build/launcher/"
+        echo "$AFRO_ROOT/build/launcher/Afro Samurai Launcher.app" ;;
     *)
-        echo "unknown step '$s' (stage decrypt analyse lift spu build)" >&2; exit 2 ;;
+        echo "unknown step '$s' (stage decrypt analyse lift spu build launcher)" >&2; exit 2 ;;
     esac
 done
 say "done"
