@@ -11,7 +11,9 @@
 #            game/EBOOT.elf with tools/decrypt_self.py and $AFRO_KEYS
 #   analyse  toolkit tools/ppu_loader.py -> analysis/BLUS30264
 #   lift     toolkit tools/ppu_lifter.py -> recompiled/BLUS30264
-#   spu      extract the EBOOT's embedded SPU ELFs and lift them (tools/lift_spu.sh)
+#   spu      extract the EBOOT's embedded SPU ELFs and lift them (tools/lift_spu.sh),
+#            the skinning jobs (lift_jobs.sh) and FMOD's plugins as relocatable
+#            overlays (lift_fmod_plugins.sh)
 #   build    configure once if needed, then tools/build.sh (resource guards)
 #
 # Environment: see tools/env.sh. JOBS controls lifting; BUILD_JOBS controls build;
@@ -63,7 +65,8 @@ for s in $steps; do
         say "spu"
         "$PY" "$PS3RECOMP_DIR/tools/extract_spu_images.py" "$E" -o "$AFRO_ANALYSIS/spu"
         "$here/lift_spu.sh"
-        "$here/lift_jobs.sh" ;;
+        "$here/lift_jobs.sh"
+        "$here/lift_fmod_plugins.sh" ;;
     build)
         say "build"
         if [ ! -f "$AFRO_BUILD/build.ninja" ]; then
