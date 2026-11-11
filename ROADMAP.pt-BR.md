@@ -34,11 +34,19 @@ vem a seguir. Mesma organização dos roadmaps do inFAMOUS 2 e dos Resistance.
   test, então cartões de grama e folhagem saíam como retângulos escuros.
   Agora só os subcanais 3D chegam ao motor (`GCM_ENGINE_3D_SUBCH=1`, padrão
   do port).
+- **Jogo mais rápido (11/11/2026):** 26,1 -> 28,9 fps nos mesmos 60 s de
+  uma caminhada headless, p95 64 -> 42 ms, p99 83 -> 57 ms, quadros acima
+  de 50 ms 12,4% -> 2,0%. A JOBLIST de skinning roda em quatro threads em
+  vez de um (`SPURS_JC_JOBLIST_PAR=4`), e a drenagem da FIFO gasta menos
+  CPU por draw. As traduções de shader ficam guardadas entre execuções,
+  fechar a janela ou Ctrl+C sai do jogo direito, e um teste de 10 minutos
+  manteve a memória estável.
 - **Bloqueio atual:** nenhum conhecido. A conferência final da grama do
   pátio está pendente, e outras texturas quebradas podem restar sem
   reporte.
 - **Próximo:** confirmar a grama a olho, procurar outros erros de
-  renderização jogando além dos primeiros minutos.
+  renderização jogando além dos primeiros minutos, e resolver os 2% de
+  quadros lentos que restam (a drenagem da FIFO e os jobs de skinning).
 - **Toolkit:** ps3recomp v0.19.0 do upstream (`ae92407b`) mais as mudanças
   genéricas deste port, controladas por variáveis de ambiente, num patch só
   (`patches/ps3recomp-ae92407b-afro.patch`).
@@ -134,7 +142,7 @@ vem a seguir. Mesma organização dos roadmaps do inFAMOUS 2 e dos Resistance.
   contexto de job antigo. As três corrigidas (07/11/2026).
 - [ ] Vigiar os logs por mais alvos de "unresolved indirect call" e
   acrescentar as tabelas deles ao `tools/jumptables.txt` (ou deixar a busca
-  achá-las).
+  achá-las). Nenhum num teste de 10 minutos até a vila (11/11/2026).
 - [x] Os dois jobs conhecidos da cadeia de skinning extraídos do EBOOT no
   rebuild (`tools/extract_jobs.py`), conferidos byte a byte com dumps de execução.
 
@@ -181,19 +189,34 @@ vem a seguir. Mesma organização dos roadmaps do inFAMOUS 2 e dos Resistance.
 - [x] O áudio dentro do jogo conferido de ouvido: soa certo (veja a
   correção dos plugins do FMOD acima). A comparação com o RPCS3 e o
   rebaixamento opcional `PS3_AUDIO_DOWNMIX=itu` ficam para depois.
-- [ ] 30 fps estáveis com frame pacing regular (o alvo do jogo no PS3; a média
-  já foi atingida), medidos com tempos de quadro p95/p99; perfilar CPU, SPU, GPU, compilação de
-  shaders e streaming.
-- [ ] O cache de tradução de shaders e a compilação de pipelines em segundo
-  plano dos outros ports, para shaders vistos pela primeira vez não
-  engasgarem.
+- [x] Tempos de quadro medidos: o `tools/frametimes.py` lê uma linha do
+  tempo do `PS3_FTRACE` e mostra p50/p95/p99 e a fração de quadros lentos.
+- [x] A JOBLIST de skinning em quatro threads (`SPURS_JC_JOBLIST_PAR=4`):
+  ela deixava um thread 94% ocupado e o thread de render esperando.
+- [x] Menos CPU por draw na drenagem da FIFO (deduplicação de vértices por
+  mapa direto, laço para `CMP32`, hash de textura em quatro faixas): 17,8
+  -> 14,3 ms por quadro.
+- [ ] 30 fps estáveis com frame pacing regular (o alvo do jogo no PS3) (em
+  andamento): 28,9 fps, p95 42 ms, p99 57 ms, 2% dos quadros acima de
+  50 ms em 60 s de caminhada headless. Próximos custos: a leitura de
+  vértices na CPU durante a drenagem e o próprio job de skinning; o
+  streaming ainda não foi perfilado.
+- [x] O cache de tradução de shaders guardado entre execuções (o `run.sh`
+  definia uma variável que nada lia; agora `PS3RECOMP_MSL_CACHE=cache/msl`):
+  pior quadro dos primeiros minutos 481 -> 261 ms.
+- [ ] A compilação de pipelines em segundo plano dos outros ports, para um
+  shader visto pela primeira vez não engasgar nem uma vez.
 
 ### Estabilidade
 
 - [ ] Sessões longas sem travar e sem vazamento (o jogo cria e destrói
   milhares de mempools; vigiar se o mapeador com controle não fica sem
-  espaço).
-- [ ] Um encerramento limpo.
+  espaço). Dez minutos headless: memória estável em ~600 MB do quarto
+  minuto em diante; uma hora de jogo de verdade é a próxima conferência.
+- [x] Um encerramento limpo: fechar a janela, Ctrl+C e SIGTERM saem como o
+  Cmd+Q e o Quit Game (REQUEST_EXITGAME, exit 0 após `PS3_QUIT_GRACE_MS`,
+  nunca durante um save); antes, uma janela fechada deixava o jogo
+  rodando.
 
 ### Rebuild
 

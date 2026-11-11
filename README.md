@@ -72,6 +72,29 @@ Since then (2026-11-11), the audio and the textures:
   (`GCM_ENGINE_3D_SUBCH=1`, set by the port): all 83 dumped draws in the
   village read the title's alpha test (it was garbage on 966 of 1178).
 
+Later the same day, speed and housekeeping:
+
+- **Frame rate in play: 26.1 -> 28.9 fps.** Over the same 60 s of a
+  headless walk in the village, p95 went from 64 to 42 ms, p99 from 83 to
+  57 ms, and frames over 50 ms from 12.4% to 2.0%. The vertex-skinning
+  JOBLIST ran its jobs one after another on one host thread, 94% busy,
+  and the render thread waited on it every frame; it now runs on four
+  threads, as the SPURS job manager spreads a list over the SPUs
+  (`SPURS_JC_JOBLIST_PAR=4`, set by the port). The FIFO drain also takes
+  less CPU per draw (17.8 -> 14.3 ms a frame): a direct map for the vertex
+  dedupe, a loop of its own for packed `CMP32` normals, and a four-lane
+  texture hash.
+- **Shader translations kept across runs.** `run.sh` exported a variable
+  nothing reads, so every run translated each shader again; it now sets
+  `PS3RECOMP_MSL_CACHE=cache/msl` (worst frame in the first minutes of play
+  481 -> 261 ms).
+- **Quitting.** Closing the window used to leave the game running with no
+  window; it, Ctrl+C and SIGTERM now quit the way Cmd+Q and the console's
+  Quit Game do (REQUEST_EXITGAME, then exit 0 after `PS3_QUIT_GRACE_MS`,
+  never while a save is being written).
+- **Long runs.** Ten minutes headless: memory steady at ~600 MB from the
+  fourth minute on, no "unresolved indirect call".
+
 The two fixes that took the game from exploded geometry to a correct scene
 (2026-11-07):
 
@@ -170,6 +193,8 @@ Known issues, being worked on:
   textures that stream in; `PS3RECOMP_ENG_TEXHASH_FULL=1` tests it.
 - **Only the start of the first level has been played**; the rest of the
   game is untested.
+- **Frame pacing** is not yet even: 2% of frames in play still take
+  over 50 ms (the FIFO drain and the skinning jobs are the next costs).
 - **Keyboard and mouse** have not been tested; a controller works.
 - One headless run stalled once while loading the level (after
   `LoadRenderThreadProc` exited); not reproduced since, not investigated.
@@ -313,6 +338,10 @@ arguments are environment overrides: `tools/run.sh PS3_VERBOSE=1`.
 | `GCM_ENGINE_3D_SUBCH=0` | 2D blit methods reach the 3D register file again (grass loses its alpha test; the port sets it to 1) |
 | `PS3RECOMP_ENG_TEXHASH_FULL=1` | hashes whole textures every frame, to test stale streamed textures (unconfirmed) |
 | `PS3_AUDIO_DOWNMIX=itu` | optional stereo fold-down of the multichannel mix (off by default) |
+| `SPURS_JC_JOBLIST_PAR=<n>` | runs a JOBLIST's jobs on up to n host threads (the port sets 4; 0 = one after another) |
+| `PS3RECOMP_VTX_REMAP_HASH=1` | the vertex dedupe uses its hash for every draw again (A/B) |
+| `PS3RECOMP_MSL_CACHE=<dir>` | where the shader translations are kept (`run.sh`: `cache/msl`) |
+| `PS3_QUIT_GRACE_MS` | how long a quit waits for the game before ending it (default 3000) |
 | `SPURS_LFQ_NOWAKE=1` | turns off the LF-queue wake fix (for comparison) |
 | `SPURS_JG_WAIT_FOREVER=0` | the job-chain walker gives up on a closed guard after 20 s again (the skinning chain dies before New Game) |
 | `SPURS_JC_EVENT_FROM_JOB=0` | a synthetic event per job again (the render thread's event is dropped) |
@@ -326,7 +355,7 @@ The seven defaults above (`PS3_MMAPPER_TRACK`, `PS3_MAPPER_WIDE`,
 `SPU_INTERP_UNLIFTED`, `SAVEDATA_CBRESULT_STRICT` and the three `SPURS_*`
 job switches) are set in `afro_defaults()` in
 [`port/main.cpp`](port/main.cpp) unless they are already in the environment;
-so is `GCM_ENGINE_3D_SUBCH=1`.
+so are `GCM_ENGINE_3D_SUBCH=1` and `SPURS_JC_JOBLIST_PAR=4`.
 
 ### Diagnostics
 
@@ -353,6 +382,12 @@ for t in $(seq 101 2 145); do B="$B$t:0x4000,"; done
 PROBE_SNAP=10 tools/probe.sh newgame 240 PAD_SCRIPT="${B%,}" SPU_DUMP_MISS=$PWD/cache/jobs
 ```
 
+Frame times: `PS3_FTRACE=<start s>:<seconds>:<file>` records a timeline
+(the toolkit's `include/ps3emu/ps3_ftrace.h`), and
+`tools/frametimes.py <file> [--kind flip|present]` prints the frame rate,
+p50/p95/p99/max and the share of frames over 1.5x and 2x a 30 fps frame;
+the toolkit's `tools/ftrace_report.py` says what each thread did per frame.
+
 For a headless run through the menus, point `PS3_HDD0_ROOT=<empty dir>` at a
 fresh folder: an existing save adds "Continue" to the menu and breaks the
 scripted pad.
@@ -366,7 +401,7 @@ running process does, and guest memory is read through the `vm_base` symbol
 | Path | What it is |
 | --- | --- |
 | [`port/`](port/) | The port: `main.cpp` (boot, guest thread, `afro_defaults()`), `stubs.cpp` (PRX hook and overrides, empty for now), `CMakeLists.txt`, `spu/` (written by `tools/lift_spu.sh`: the lifted SPU code and `spu_workloads.c`, never committed) |
-| [`tools/`](tools/) | `setup.sh`, `setup_toolkit.sh`, `export_toolkit_patch.sh`, `fetch_keys.py`, `rebuild.sh`, `build.sh`, `run.sh`, `probe.sh`, `mount.sh`, `env.sh`, `decrypt_self.py`, `lift_fmod_plugins.sh`, `lift_spu.sh`, `lift_jobs.sh`, `augment_functions.py` and `jumptables.txt` (the jump tables whose cases are lifted as functions) |
+| [`tools/`](tools/) | `setup.sh`, `setup_toolkit.sh`, `export_toolkit_patch.sh`, `fetch_keys.py`, `frametimes.py`, `rebuild.sh`, `build.sh`, `run.sh`, `probe.sh`, `mount.sh`, `env.sh`, `decrypt_self.py`, `lift_fmod_plugins.sh`, `lift_spu.sh`, `lift_jobs.sh`, `augment_functions.py` and `jumptables.txt` (the jump tables whose cases are lifted as functions) |
 | [`docs/`](docs/) | `game-manifest.md`: the disc, the executable, the engine, the imports and the SPU images; `screenshots/` |
 | [`patches/`](patches/) | The toolkit patch over ps3recomp v0.19.0 (`ae92407b`) |
 | [`ROADMAP.md`](ROADMAP.md) | Status and next steps |

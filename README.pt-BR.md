@@ -90,6 +90,29 @@ Depois disso (11/11/2026), o áudio e as texturas:
   port): os 83 draws despejados na vila leem o alpha test do título (antes
   era lixo em 966 de 1178).
 
+Mais tarde no mesmo dia, velocidade e arrumação:
+
+- **Taxa de quadros no jogo: 26,1 -> 28,9 fps.** Nos mesmos 60 s de uma
+  caminhada headless na vila, o p95 foi de 64 para 42 ms, o p99 de 83 para
+  57 ms, e os quadros acima de 50 ms de 12,4% para 2,0%. A JOBLIST de
+  skinning de vértices rodava os jobs um depois do outro num único thread,
+  94% ocupado, e o thread de render esperava por ela a cada quadro; agora
+  ela roda em quatro threads, como o gerenciador de jobs do SPURS espalha
+  uma lista pelas SPUs (`SPURS_JC_JOBLIST_PAR=4`, definida pelo port). A
+  drenagem da FIFO também gasta menos CPU por draw (17,8 -> 14,3 ms por
+  quadro): mapa direto na deduplicação de vértices, laço próprio para as
+  normais compactadas `CMP32` e hash de textura em quatro faixas.
+- **Traduções de shader guardadas entre execuções.** O `run.sh` exportava
+  uma variável que nada lê, então cada execução traduzia cada shader de
+  novo; agora ele define `PS3RECOMP_MSL_CACHE=cache/msl` (pior quadro nos
+  primeiros minutos de jogo 481 -> 261 ms).
+- **Sair do jogo.** Fechar a janela deixava o jogo rodando sem janela;
+  agora fechar, Ctrl+C e SIGTERM saem como o Cmd+Q e o Quit Game do console
+  (REQUEST_EXITGAME, depois exit 0 após `PS3_QUIT_GRACE_MS`, nunca com um
+  save sendo gravado).
+- **Sessões longas.** Dez minutos headless: memória estável em ~600 MB do
+  quarto minuto em diante, nenhum "unresolved indirect call".
+
 Antes, no mesmo dia, o slot inicial dos vertex programs: os destinos de
 salto no microcódigo de vértice do RSX são absolutos, e traduzir todo
 programa como se começasse no slot 0 deixava os programas com salto rodando
@@ -181,6 +204,9 @@ Problemas conhecidos, sendo resolvidos:
   `PS3RECOMP_ENG_TEXHASH_FULL=1` testa isso.
 - **Só o começo da primeira fase foi jogado**; o resto do jogo não foi
   testado.
+- **O ritmo dos quadros** ainda não é uniforme: 2% dos quadros no jogo
+  ainda passam de 50 ms (a drenagem da FIFO e os jobs de skinning são os
+  próximos custos).
 - **Teclado e mouse** não foram testados; o controle funciona.
 - Um teste headless parou uma vez enquanto carregava a fase (depois que o
   `LoadRenderThreadProc` terminou); não se repetiu, não foi investigado.
@@ -328,6 +354,10 @@ Argumentos a mais são variáveis de ambiente: `tools/run.sh PS3_VERBOSE=1`.
 | `GCM_ENGINE_3D_SUBCH=0` | os métodos de blit 2D voltam ao arquivo de registradores 3D (a grama perde o alpha test; o port define 1) |
 | `PS3RECOMP_ENG_TEXHASH_FULL=1` | calcula o hash das texturas inteiras a cada quadro, para testar texturas em streaming desatualizadas (não confirmado) |
 | `PS3_AUDIO_DOWNMIX=itu` | rebaixamento estéreo opcional da mixagem multicanal (desligado por padrão) |
+| `SPURS_JC_JOBLIST_PAR=<n>` | roda os jobs de uma JOBLIST em até n threads (o port define 4; 0 = um depois do outro) |
+| `PS3RECOMP_VTX_REMAP_HASH=1` | a deduplicação de vértices volta a usar o hash em todo draw (A/B) |
+| `PS3RECOMP_MSL_CACHE=<pasta>` | onde ficam as traduções de shader (`run.sh`: `cache/msl`) |
+| `PS3_QUIT_GRACE_MS` | quanto tempo uma saída espera o jogo antes de encerrá-lo (padrão 3000) |
 | `SPURS_LFQ_NOWAKE=1` | desliga a correção de despertar da fila LF (para comparação) |
 | `SPURS_JG_WAIT_FOREVER=0` | o percorredor da cadeia de jobs volta a desistir de um guard fechado depois de 20 s (a cadeia de skinning morre antes do New Game) |
 | `SPURS_JC_EVENT_FROM_JOB=0` | volta um evento sintético por job (o evento da thread de render se perde) |
@@ -341,7 +371,7 @@ Os sete padrões acima (`PS3_MMAPPER_TRACK`, `PS3_MAPPER_WIDE`,
 `SPU_INTERP_UNLIFTED`, `SAVEDATA_CBRESULT_STRICT` e as três chaves `SPURS_*`
 de jobs) são definidos em `afro_defaults()` no
 [`port/main.cpp`](port/main.cpp), a não ser que já estejam no ambiente; a
-`GCM_ENGINE_3D_SUBCH=1` também.
+`GCM_ENGINE_3D_SUBCH=1` e a `SPURS_JC_JOBLIST_PAR=4` também.
 
 ### Diagnóstico
 
@@ -369,6 +399,13 @@ for t in $(seq 101 2 145); do B="$B$t:0x4000,"; done
 PROBE_SNAP=10 tools/probe.sh newgame 240 PAD_SCRIPT="${B%,}" SPU_DUMP_MISS=$PWD/cache/jobs
 ```
 
+Tempos de quadro: `PS3_FTRACE=<início s>:<segundos>:<arquivo>` grava uma
+linha do tempo (o `include/ps3emu/ps3_ftrace.h` do toolkit), e o
+`tools/frametimes.py <arquivo> [--kind flip|present]` mostra a taxa de
+quadros, p50/p95/p99/máximo e a fração de quadros acima de 1,5x e 2x um
+quadro de 30 fps; o `tools/ftrace_report.py` do toolkit diz o que cada
+thread fez em cada quadro.
+
 Para um teste headless pelos menus, aponte `PS3_HDD0_ROOT=<pasta vazia>`
 para uma pasta nova: um save existente acrescenta "Continue" ao menu e
 quebra o controle por script.
@@ -382,7 +419,7 @@ processo já rodando funciona, e a memória do guest é lida pelo símbolo
 | Caminho | O que é |
 | --- | --- |
 | [`port/`](port/) | O port: `main.cpp` (boot, thread do guest, `afro_defaults()`), `stubs.cpp` (hook de PRX e substituições, vazio por enquanto), `CMakeLists.txt`, `spu/` (gerado pelo `tools/lift_spu.sh`: o código SPU traduzido e o `spu_workloads.c`, nunca vão para o repositório) |
-| [`tools/`](tools/) | `setup.sh`, `setup_toolkit.sh`, `export_toolkit_patch.sh`, `fetch_keys.py`, `rebuild.sh`, `build.sh`, `run.sh`, `probe.sh`, `mount.sh`, `env.sh`, `decrypt_self.py`, `lift_fmod_plugins.sh`, `lift_spu.sh`, `lift_jobs.sh`, `augment_functions.py` e `jumptables.txt` (as tabelas de salto cujos casos viram funções) |
+| [`tools/`](tools/) | `setup.sh`, `setup_toolkit.sh`, `export_toolkit_patch.sh`, `fetch_keys.py`, `frametimes.py`, `rebuild.sh`, `build.sh`, `run.sh`, `probe.sh`, `mount.sh`, `env.sh`, `decrypt_self.py`, `lift_fmod_plugins.sh`, `lift_spu.sh`, `lift_jobs.sh`, `augment_functions.py` e `jumptables.txt` (as tabelas de salto cujos casos viram funções) |
 | [`docs/`](docs/) | `game-manifest.md`: o disco, o executável, o motor, os imports e as imagens SPU; `screenshots/` |
 | [`patches/`](patches/) | O patch do toolkit sobre o ps3recomp v0.19.0 (`ae92407b`) |
 | [`ROADMAP.pt-BR.md`](ROADMAP.pt-BR.md) | Estado e próximos passos |

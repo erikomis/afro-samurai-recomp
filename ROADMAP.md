@@ -31,10 +31,17 @@ comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
   3D register file, wiping the alpha-test state, so grass and foliage cards
   drew as dark rectangles. Only 3D subchannels reach the engine now
   (`GCM_ENGINE_3D_SUBCH=1`, the port default).
+- **Faster play (2026-11-11):** 26.1 -> 28.9 fps over the same 60 s of a
+  headless walk, p95 64 -> 42 ms, p99 83 -> 57 ms, frames over 50 ms 12.4%
+  -> 2.0%. The skinning JOBLIST runs on four threads instead of one
+  (`SPURS_JC_JOBLIST_PAR=4`), and the FIFO drain spends less CPU per draw.
+  Shader translations are kept across runs, closing the window or Ctrl+C
+  quits cleanly, and a 10-minute run held its memory steady.
 - **Current blocker:** none known. The final look at the courtyard grass is
   pending, and other broken textures may remain unreported.
 - **Next:** confirm the grass by eye, look for other rendering errors while
-  playing further than the first minutes.
+  playing further than the first minutes, and take the last 2% of slow
+  frames (the FIFO drain and the skinning jobs).
 - **Toolkit:** upstream ps3recomp v0.19.0 (`ae92407b`) plus this port's
   generic, env-gated changes, as one patch
   (`patches/ps3recomp-ae92407b-afro.patch`).
@@ -123,7 +130,8 @@ comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
   input pointed at the cache buffer in the older job context. All three fixed
   (2026-11-07).
 - [ ] Watch the logs for more "unresolved indirect call" targets and add
-  their tables to `tools/jumptables.txt` (or let the scan find them).
+  their tables to `tools/jumptables.txt` (or let the scan find them). None
+  in a 10-minute run into the village (2026-11-11).
 - [x] The two known skinning-chain jobs extracted from the EBOOT at rebuild
   time (`tools/extract_jobs.py`), verified byte-for-byte against runtime dumps.
 
@@ -170,17 +178,32 @@ comes next. Same layout as the inFAMOUS 2 and Resistance roadmaps.
 - [x] The in-game audio checked by ear: it sounds right (see the FMOD
   plugin fix above). A comparison against RPCS3 and the optional
   `PS3_AUDIO_DOWNMIX=itu` fold-down are left for later.
-- [ ] A steady 30 fps with even frame pacing (the game's target on PS3;
-  the average is reached), measured with p95/p99 frame times; profile CPU, SPU, GPU, shader builds and
-  streaming.
-- [ ] The shader translation cache and background pipeline builds from the
-  other ports, so first-seen shaders do not hitch.
+- [x] Frame times measured: `tools/frametimes.py` reads a `PS3_FTRACE`
+  timeline and prints p50/p95/p99 and the share of slow frames.
+- [x] The skinning JOBLIST on four threads (`SPURS_JC_JOBLIST_PAR=4`): it
+  kept one host thread 94% busy and the render thread waited on it.
+- [x] Less CPU per draw in the FIFO drain (direct-map vertex dedupe, a
+  `CMP32` loop, a four-lane texture hash): 17.8 -> 14.3 ms a frame.
+- [ ] A steady 30 fps with even frame pacing (the game's target on PS3)
+  (in progress): 28.9 fps, p95 42 ms, p99 57 ms, 2% of frames over 50 ms
+  over 60 s of a headless walk. Next costs: the drain's CPU vertex fetch
+  and the skinning job itself; streaming not profiled yet.
+- [x] The shader translation cache kept across runs (`run.sh` set a
+  variable nothing read; now `PS3RECOMP_MSL_CACHE=cache/msl`): the worst
+  frame of the first minutes 481 -> 261 ms.
+- [ ] Background pipeline builds from the other ports, so a first-seen
+  shader does not hitch even once.
 
 ### Stability
 
 - [ ] Long sessions without a hang or a leak (the game churns thousands of
-  mempools; watch that the tracked mapper does not run out of room).
-- [ ] A clean shutdown.
+  mempools; watch that the tracked mapper does not run out of room). Ten
+  minutes headless: memory steady at ~600 MB from the fourth minute on;
+  an hour of real play is the next check.
+- [x] A clean shutdown: closing the window, Ctrl+C and SIGTERM quit like
+  Cmd+Q and Quit Game (REQUEST_EXITGAME, exit 0 after
+  `PS3_QUIT_GRACE_MS`, never during a save); before, a closed window left
+  the game running.
 
 ### Rebuild
 
