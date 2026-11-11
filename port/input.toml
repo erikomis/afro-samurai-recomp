@@ -1,0 +1,34 @@
+# The port's default controls (PS3_INPUT_MAP; tools/run.sh and the launcher
+# pass this file until the player makes their own). Format: the toolkit's
+# libs/input/pad_input_map.h. Afro Samurai is played with a pad, so this is
+# the keyboard-as-a-pad layout the port has always had, not the toolkit's
+# first-person default: the arrows move (d-pad and left stick), no mouse camera.
+
+[keyboard]
+cross    = "Z"
+circle   = "X"
+square   = "A"
+triangle = "S"
+l1       = "Q"
+r1       = "W"
+l2       = "1"
+r2       = "2"
+l3       = ""
+r3       = ""
+start    = "Return"
+select   = "Tab"
+up       = "Up"
+down     = "Down"
+left     = "Left"
+right    = "Right"
+ls_up    = "Up"
+ls_down  = "Down"
+ls_left  = "Left"
+ls_right = "Right"
+rs_up    = ""
+rs_down  = ""
+rs_left  = ""
+rs_right = ""
+
+[mouse]
+camera = false

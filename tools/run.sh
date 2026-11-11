@@ -43,6 +43,8 @@ mkdir -p "$PS3RECOMP_MSL_CACHE"
 [ -d "$HOME/Library/Application Support/rpcs3/dev_flash" ] && \
     export PS3_DEV_FLASH="${PS3_DEV_FLASH:-$HOME/Library/Application Support/rpcs3/dev_flash}"
 export PS3_TITLE=${PS3_TITLE:-"Afro Samurai"}
+# The controls: the port's own layout (port/input.toml) unless another file is given.
+export PS3_INPUT_MAP=${PS3_INPUT_MAP:-$AFRO_ROOT/port/input.toml}
 # A redirected stderr means verbose by default (runtime/ps3_log.h); keep it quiet
 # unless asked: PS3_VERBOSE=1.
 export PS3_VERBOSE=${PS3_VERBOSE:-0}
