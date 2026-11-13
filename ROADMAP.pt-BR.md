@@ -300,10 +300,16 @@ bug do port e bug do jogo original são coisas diferentes.
   volume mudados ao vivo, o arquivo salvo, Sair terminando com status 0) e
   numa janela (MetalFX ligado, sem bordas e de volta, vsync desligado).
   Ainda não usado à mão com teclado, mouse ou controle.
+- [x] Supersampling (2026-11-13), do window host do port de Resistance:
+  uma imagem maior que a janela é reduzida para ela com um filtro Lanczos
+  (`PS3_DOWNSCALE=0` desliga), com as bordas preservadas e a nitidez
+  depois; um passo 5K (4x). `test_metal_downscale.m`; numa janela 1280x720
+  (2560x1440 pixels) 3x e 4x rodaram a abertura a 59 fps. Ainda não visto
+  no jogo em si.
 - [ ] Ainda a trazer dos outros ports, nesta ordem: a geração de quadros
   (`PS3_FRAMEGEN`), mods e pacotes de textura (`PS3_MODS_DIR`), compilação
   de shaders em segundo plano, os controles de tom, telas largas, ícones
-  dos botões, supersampling. (A saída limpa já estava aqui:
+  dos botões. (A saída limpa já estava aqui:
   `PS3_QUIT_GRACE_MS`.)
 - [ ] Atualização do app no lugar, assinada (precisa de uma chave do updater;
   `launcher/README.md`).

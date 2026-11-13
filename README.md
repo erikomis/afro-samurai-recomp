@@ -376,7 +376,8 @@ saves with `tools/run.sh`. Details in [`launcher/README.md`](launcher/README.md)
 | `PS3RECOMP_VTX_REMAP_HASH=1` | the vertex dedupe uses its hash for every draw again (A/B) |
 | `PS3RECOMP_MSL_CACHE=<dir>` | where the shader translations are kept (`run.sh`: `cache/msl`) |
 | `PS3_QUIT_GRACE_MS` | how long a quit waits for the game before ending it (default 3000) |
-| `PS3_RES_SCALE=1.5\|2\|3` | internal resolution: the render targets at 1080p, 1440p or 4K instead of 1280×720 (experimental; 1.5 measured -3% frame rate) |
+| `PS3_RES_SCALE=1.5\|2\|3\|4` | internal resolution: the render targets at 1080p, 1440p, 4K or 5K instead of 1280×720 (experimental; 1.5 measured -3% frame rate) |
+| `PS3_DOWNSCALE=0` | supersampling off: a picture larger than the window is reduced into it with a Lanczos filter by default; `0` samples it bilinearly as before |
 | `PS3_UPSCALE=metalfx`, `PS3_VSYNC=0`, `PS3_WINDOW_MODE=fullscreen\|borderless`, `PS3_DISPLAY`, `PS3_WINDOW_SIZE` | MetalFX upscaling to the window, no vsync, the window's mode, screen and size (Cmd+F toggles) |
 | `PS3_AA`, `PS3_SHARPEN`, `PS3_ANISO`, `PS3_VIBRANCE`, `PS3_CONTRAST`, `PS3_VIGNETTE`, `PS3_GRAIN`, `PS3_LUT` | the present pass: FXAA/SMAA, sharpening, anisotropic filtering, colour filters, a ReShade-layout LUT |
 | `PS3_AUDIO_VOLUME=0..100`, `PS3_AUDIO_MUTE=1`, `PS3_AUDIO_DEVICE=<name>` | master volume, mute, the output device |

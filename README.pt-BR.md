@@ -391,7 +391,8 @@ dividir os saves com o `tools/run.sh`. Detalhes em
 | `PS3RECOMP_VTX_REMAP_HASH=1` | a deduplicação de vértices volta a usar o hash em todo draw (A/B) |
 | `PS3RECOMP_MSL_CACHE=<pasta>` | onde ficam as traduções de shader (`run.sh`: `cache/msl`) |
 | `PS3_QUIT_GRACE_MS` | quanto tempo uma saída espera o jogo antes de encerrá-lo (padrão 3000) |
-| `PS3_RES_SCALE=1.5\|2\|3` | resolução interna: os alvos de render em 1080p, 1440p ou 4K em vez de 1280×720 (experimental; 1,5 mediu -3% de taxa de quadros) |
+| `PS3_RES_SCALE=1.5\|2\|3\|4` | resolução interna: os alvos de render em 1080p, 1440p, 4K ou 5K em vez de 1280×720 (experimental; 1,5 mediu -3% de taxa de quadros) |
+| `PS3_DOWNSCALE=0` | supersampling desligado: por padrão uma imagem maior que a janela é reduzida para ela com um filtro Lanczos; `0` faz a amostragem bilinear de antes |
 | `PS3_UPSCALE=metalfx`, `PS3_VSYNC=0`, `PS3_WINDOW_MODE=fullscreen\|borderless`, `PS3_DISPLAY`, `PS3_WINDOW_SIZE` | ampliação MetalFX até a janela, sem vsync, o modo, a tela e o tamanho da janela (Cmd+F alterna) |
 | `PS3_AA`, `PS3_SHARPEN`, `PS3_ANISO`, `PS3_VIBRANCE`, `PS3_CONTRAST`, `PS3_VIGNETTE`, `PS3_GRAIN`, `PS3_LUT` | o passe final: FXAA/SMAA, nitidez, filtragem anisotrópica, filtros de cor, um LUT no layout do ReShade |
 | `PS3_AUDIO_VOLUME=0..100`, `PS3_AUDIO_MUTE=1`, `PS3_AUDIO_DEVICE=<nome>` | volume geral, mudo, o dispositivo de saída |
