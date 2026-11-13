@@ -602,6 +602,43 @@
           </div>
         </section>
 
+        <section class="section" data-feature="PS3_PAD_ADAPTIVE">
+          <h2 data-i18n="settings.dsTitle">DualSense</h2>
+          <p class="hint" data-i18n="settings.dsHint"></p>
+          <div class="opt">
+            <span class="opt-text"><label class="opt-label" for="pad-adaptive" data-i18n="settings.dsAdaptive">Gatilhos adaptativos</label><span class="hint" data-i18n="settings.dsAdaptiveHint"></span></span>
+            <span class="slider"><input id="pad-adaptive" type="range" min="0" max="8" step="1" /><output id="pad-adaptive-out"></output></span>
+          </div>
+          <label class="opt">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.dsLight"></span><span class="hint" data-i18n="settings.dsLightHint"></span></span>
+            <span class="switch"><input id="pad-light-on" type="checkbox" /><i></i></span>
+          </label>
+          <div class="opt sub">
+            <span class="opt-text"><label class="opt-label" for="pad-light" data-i18n="settings.dsLightColor">Cor</label></span>
+            <input id="pad-light" type="color" />
+          </div>
+          <label class="opt sub">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.dsLightHit"></span><span class="hint" data-i18n="settings.dsLightHitHint"></span></span>
+            <span class="switch"><input id="pad-light-hit" type="checkbox" /><i></i></span>
+          </label>
+          <div class="opt">
+            <span class="opt-text"><label class="opt-label" for="pad-gyro" data-i18n="settings.dsGyro">Giroscópio na câmera</label><span class="hint" data-i18n="settings.dsGyroHint"></span></span>
+            <span class="slider"><input id="pad-gyro" type="range" min="0" max="400" step="10" /><output id="pad-gyro-out"></output></span>
+          </div>
+          <div class="opt sub">
+            <span class="opt-text"><label class="opt-label" for="pad-gyro-mode" data-i18n="settings.dsGyroMode">Quando</label></span>
+            <select id="pad-gyro-mode">
+              <option value="always" data-i18n="settings.dsGyroAlways">Sempre</option>
+              <option value="l1" data-i18n="settings.dsGyroL1">Segurando L1</option>
+              <option value="l2" data-i18n="settings.dsGyroL2">Segurando L2</option>
+            </select>
+          </div>
+          <label class="opt sub">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.dsGyroInvert"></span></span>
+            <span class="switch"><input id="pad-gyro-invert" type="checkbox" /><i></i></span>
+          </label>
+        </section>
+
         <section class="section">
           <h2 data-i18n="controls.notesTitle">No Mac</h2>
           <p class="hint" data-i18n="controls.pairing"></p>

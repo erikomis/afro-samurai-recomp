@@ -45,6 +45,13 @@ export interface Settings {
   mouseCapture: boolean;
   rumble: boolean;
   rumbleStrength: number;
+  padAdaptive: number;
+  padLightOn: boolean;
+  padLight: string;
+  padLightHit: boolean;
+  padGyro: number;
+  padGyroMode: string;
+  padGyroInvertY: boolean;
   audioVolume: number;
   audioMute: boolean;
   audioDevice: string;
@@ -474,6 +481,11 @@ function bindSettings() {
   bindCheck("mouse-invert-x", "mouseInvertX");
   bindCheck("mouse-capture", "mouseCapture");
   bindCheck("rumble-on", "rumble");
+  bindCheck("pad-light-on", "padLightOn");
+  bindCheck("pad-light-hit", "padLightHit");
+  bindCheck("pad-gyro-invert", "padGyroInvertY");
+  bindSelect("pad-gyro-mode", "padGyroMode");
+  bindText("pad-light", "padLight");
   bindCheck("parallel-jobs", "parallelJobs");
   bindCheck("high-priority", "highPriority");
   bindCheck("shader-cache", "shaderCache");
@@ -506,6 +518,8 @@ function bindSettings() {
   bindRange("mouse-sens", "mouseSens", (v) => `${v.toFixed(2)}×`);
   bindRange("mouse-dz", "mouseDeadzone", (v) => String(v));
   bindRange("rumble-strength", "rumbleStrength", (v) => `${v}%`);
+  bindRange("pad-adaptive", "padAdaptive", (v) => (v > 0 ? String(v) : t("settings.off")));
+  bindRange("pad-gyro", "padGyro", (v) => (v > 0 ? `${v}%` : t("settings.off")));
   bindRange("audio-volume", "audioVolume", (v) => `${v}%`);
   const lutSync = () => {
     $("lut-file").textContent = settings.lutPath ? tilde(settings.lutPath) : t("settings.lutNone");
@@ -620,6 +634,13 @@ const DEFAULTS: Partial<Settings> = {
   mouseCapture: true,
   rumble: true,
   rumbleStrength: 100,
+  padAdaptive: 3,
+  padLightOn: true,
+  padLight: "#d6aa46",
+  padLightHit: true,
+  padGyro: 0,
+  padGyroMode: "always",
+  padGyroInvertY: false,
   audioVolume: 100,
   audioMute: false,
   audioDevice: "",
@@ -644,6 +665,8 @@ function syncDependent() {
   $<HTMLInputElement>("gamma").disabled = !settings.gammaOverride;
   for (const id of ["mouse-sens", "mouse-invert", "mouse-invert-x", "mouse-dz", "mouse-capture"]) $<HTMLInputElement>(id).disabled = !settings.mouse;
   $<HTMLInputElement>("rumble-strength").disabled = !settings.rumble;
+  for (const id of ["pad-light", "pad-light-hit"]) $<HTMLInputElement>(id).disabled = !settings.padLightOn;
+  for (const id of ["pad-gyro-mode", "pad-gyro-invert"]) $<HTMLInputElement>(id).disabled = !(settings.padGyro > 0);
   $<HTMLInputElement>("audio-volume").disabled = settings.audioMute;
   $<HTMLInputElement>("lut-strength").disabled = !settings.lutPath;
   $<HTMLButtonElement>("lut-clear").disabled = !settings.lutPath;

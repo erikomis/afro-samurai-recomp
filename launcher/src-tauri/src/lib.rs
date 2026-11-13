@@ -126,6 +126,19 @@ pub struct Settings {
     /// PS3_RUMBLE=0 when off; PS3_RUMBLE_STRENGTH in percent (0-200).
     pub rumble: bool,
     pub rumble_strength: u32,
+    /// DualSense. PS3_PAD_ADAPTIVE: the triggers' resistance, 0-8 (3 = the
+    /// runtime's default, 0 = free triggers).
+    pub pad_adaptive: u32,
+    /// PS3_PAD_LIGHT=<RRGGBB> when on (off: the controller keeps its own
+    /// colour); PS3_PAD_LIGHT_HIT=0 when the glow on hits is off.
+    pub pad_light_on: bool,
+    pub pad_light: String,
+    pub pad_light_hit: bool,
+    /// PS3_PAD_GYRO in percent (0 = off, up to 400), PS3_PAD_GYRO_MODE
+    /// (always, l1, l2) and PS3_PAD_GYRO_INVERT_Y.
+    pub pad_gyro: u32,
+    pub pad_gyro_mode: String,
+    pub pad_gyro_invert_y: bool,
     /// PS3_AUDIO_VOLUME (0-100, 100 = the default), PS3_AUDIO_MUTE=1 when
     /// muted, PS3_AUDIO_DEVICE (the output whose name contains it; empty =
     /// the system's default).
@@ -204,6 +217,13 @@ impl Default for Settings {
             mouse_capture: true,
             rumble: true,
             rumble_strength: 100,
+            pad_adaptive: 3,
+            pad_light_on: true,
+            pad_light: PAD_LIGHT_DEFAULT.into(),
+            pad_light_hit: true,
+            pad_gyro: 0,
+            pad_gyro_mode: "always".into(),
+            pad_gyro_invert_y: false,
             audio_volume: 100,
             audio_mute: false,
             audio_device: String::new(),
@@ -1246,6 +1266,27 @@ fn launch_env(s: &Settings, vfs: &Path, play: &Path, icon: Option<&Path>, input:
     } else if s.rumble_strength != 100 {
         set("PS3_RUMBLE_STRENGTH", s.rumble_strength.min(200).to_string());
     }
+    // DualSense: the triggers (only when not the runtime's 3), the light bar
+    // (the port's gold unless the player turned it off or chose a colour),
+    // the gyro (off unless asked for).
+    if s.pad_adaptive != 3 {
+        set("PS3_PAD_ADAPTIVE", s.pad_adaptive.min(8).to_string());
+    }
+    if s.pad_light_on {
+        set("PS3_PAD_LIGHT", pad_light_hex(&s.pad_light).unwrap_or_else(|| PAD_LIGHT_DEFAULT[1..].to_uppercase()));
+        if !s.pad_light_hit {
+            set("PS3_PAD_LIGHT_HIT", "0".into());
+        }
+    }
+    if s.pad_gyro > 0 {
+        set("PS3_PAD_GYRO", s.pad_gyro.min(400).to_string());
+        if matches!(s.pad_gyro_mode.as_str(), "l1" | "l2") {
+            set("PS3_PAD_GYRO_MODE", s.pad_gyro_mode.clone());
+        }
+        if s.pad_gyro_invert_y {
+            set("PS3_PAD_GYRO_INVERT_Y", "1".into());
+        }
+    }
     // Audio: only what differs from the default (full volume, the system's
     // output). The runtime mutes on any PS3_AUDIO_MUTE value, so it is
     // passed only when on.
@@ -1535,6 +1576,16 @@ async fn get_status(app: AppHandle, state: State<'_, AppState>) -> Result<Status
 /// a feature the settings drive. A build made before the feature landed lacks
 /// the name; the window then labels (or, for the optional game patches,
 /// hides) the setting rather than pass a variable nothing reads.
+/// The light bar's colour until the player picks one: the port's gold.
+const PAD_LIGHT_DEFAULT: &str = "#d6aa46";
+
+/// "#rrggbb" or "rrggbb" as the RRGGBB PS3_PAD_LIGHT takes; None when it is
+/// not a colour.
+fn pad_light_hex(s: &str) -> Option<String> {
+    let h = s.trim().trim_start_matches('#');
+    (h.len() == 6 && h.chars().all(|c| c.is_ascii_hexdigit())).then(|| h.to_ascii_uppercase())
+}
+
 const FEATURE_MARKERS: &[&str] = &[
     "PS3RECOMP_FULLSCREEN", // the window's size
     "PS3_WINDOW_MODE",      // the window's modes, the screen, vsync
@@ -1544,6 +1595,7 @@ const FEATURE_MARKERS: &[&str] = &[
     "PS3_UPSCALE",          // MetalFX
     "PS3_AUDIO_VOLUME",     // volume, mute and output device
     "PS3_INPUT_MAP",        // bindings, input mode, mouse camera, rumble
+    "PS3_PAD_ADAPTIVE",     // DualSense triggers, light bar and gyro
     "PS3RECOMP_MSL_CACHE",  // the shader translation cache
     "SPURS_JC_JOBLIST_PAR", // the skinning jobs on four threads
     "PS3_QUIT_GRACE_MS",    // Stop and closing the window quit the game cleanly
@@ -3131,6 +3183,48 @@ pub fn run() {
 mod tests {
     use super::*;
 
+    /// The DualSense options: the triggers' strength, the light bar's colour
+    /// (a bad one falls back to the port's), the gyro only when it is on.
+    #[test]
+    fn dualsense_env() {
+        let none = InputEnv::default();
+        let env = |st: &Settings| -> BTreeMap<String, String> { launch_env(st, Path::new("/v"), Path::new("/p"), None, &none).into_iter().collect() };
+        let mut st = Settings::default();
+        st.video = false; // no FFmpeg lookup
+        st.pad_adaptive = 0;
+        st.pad_light = "#C8102E".into();
+        st.pad_light_hit = false;
+        st.pad_gyro = 150;
+        st.pad_gyro_mode = "l2".into();
+        st.pad_gyro_invert_y = true;
+        let e = env(&st);
+        assert_eq!(e["PS3_PAD_ADAPTIVE"], "0");
+        assert_eq!(e["PS3_PAD_LIGHT"], "C8102E");
+        assert_eq!(e["PS3_PAD_LIGHT_HIT"], "0");
+        assert_eq!(e["PS3_PAD_GYRO"], "150");
+        assert_eq!(e["PS3_PAD_GYRO_MODE"], "l2");
+        assert_eq!(e["PS3_PAD_GYRO_INVERT_Y"], "1");
+
+        st.pad_adaptive = 99;
+        st.pad_light = "red".into();
+        st.pad_gyro = 9000;
+        st.pad_gyro_mode = "sideways".into();
+        let e = env(&st);
+        assert_eq!(e["PS3_PAD_ADAPTIVE"], "8");
+        assert_eq!(e["PS3_PAD_LIGHT"], "D6AA46");
+        assert_eq!(e["PS3_PAD_GYRO"], "400");
+        assert!(!e.contains_key("PS3_PAD_GYRO_MODE"));
+
+        st.pad_light_on = false;
+        st.pad_gyro = 0;
+        let e = env(&st);
+        for k in ["PS3_PAD_LIGHT", "PS3_PAD_LIGHT_HIT", "PS3_PAD_GYRO", "PS3_PAD_GYRO_MODE", "PS3_PAD_GYRO_INVERT_Y"] {
+            assert!(!e.contains_key(k), "{k}");
+        }
+        assert_eq!(pad_light_hex(" #d6aa46 "), Some("D6AA46".into()));
+        assert_eq!(pad_light_hex("d6aa4"), None);
+    }
+
     #[test]
     fn audio_outputs_from_system_profiler() {
         let json = r#"{"SPAudioDataType":[{"_items":[
@@ -3248,20 +3342,23 @@ mod tests {
         assert_eq!(e["PS3RECOMP_FFMPEG"], "0");
         // the mouse camera is the one default that differs from the runtime's
         assert_eq!(e["PS3_MOUSE"], "0");
+        // and the DualSense's light bar takes the port's colour
+        assert_eq!(e["PS3_PAD_LIGHT"], "D6AA46");
         // the defaults pass nothing else
         for k in [
             "PS3RECOMP_METAL_WINDOW", "PS3RECOMP_FULLSCREEN", "PS3_WINDOW_MODE", "PS3_WINDOW_SIZE", "PS3_DISPLAY", "PS3_VSYNC",
             "PS3_RES_SCALE", "PS3_UPSCALE", "PS3_AA", "PS3_SHARPEN", "PS3_ANISO", "PS3_DISPLAY_GAMMA", "PS3_VIBRANCE", "PS3_CONTRAST",
             "PS3_VIGNETTE", "PS3_GRAIN", "PS3_LUT", "PS3_LUT_STRENGTH", "PS3_INPUT_MAP", "PS3_INPUT_MODE", "PAD_NO_KEYBOARD",
             "PS3_MOUSE_SENS", "PS3_MOUSE_INVERT_X", "PS3_MOUSE_INVERT_Y", "PS3_MOUSE_DEADZONE", "PS3_MOUSE_CAPTURE", "PS3_RUMBLE",
-            "PS3_RUMBLE_STRENGTH", "PS3_MUTE", "PS3_AUDIO_MUTE", "PS3_AUDIO_VOLUME", "PS3_AUDIO_DEVICE", "PS3_AUDIO_DOWNMIX",
+            "PS3_RUMBLE_STRENGTH", "PS3_PAD_ADAPTIVE", "PS3_PAD_LIGHT_HIT", "PS3_PAD_GYRO", "PS3_PAD_GYRO_MODE",
+            "PS3_PAD_GYRO_INVERT_Y", "PS3_MUTE", "PS3_AUDIO_MUTE", "PS3_AUDIO_VOLUME", "PS3_AUDIO_DEVICE", "PS3_AUDIO_DOWNMIX",
             "PS3RECOMP_METAL_FPS", "PS3RECOMP_MSL_CACHE", "SPURS_JC_JOBLIST_PAR", "PS3_QOS", "PS3_FRAMECLOCK_US", "PS3_LANG",
             "PS3_APP_ICON",
         ] {
             assert!(!e.contains_key(k), "{k} passed with the defaults");
         }
         let keys: Vec<&str> = e.keys().map(String::as_str).filter(|k| *k != "PS3_DEV_FLASH").collect(); // RPCS3's firmware, when installed
-        assert_eq!(keys, ["AUDIO_ELASTIC", "PS3RECOMP_FFMPEG", "PS3_BOOT_PATH", "PS3_GAMEDATA_ROOT", "PS3_HDD0_ROOT", "PS3_HDD1_ROOT", "PS3_MOUSE", "PS3_TITLE", "PS3_VERBOSE", "PS3_VFS_ROOT"]);
+        assert_eq!(keys, ["AUDIO_ELASTIC", "PS3RECOMP_FFMPEG", "PS3_BOOT_PATH", "PS3_GAMEDATA_ROOT", "PS3_HDD0_ROOT", "PS3_HDD1_ROOT", "PS3_MOUSE", "PS3_PAD_LIGHT", "PS3_TITLE", "PS3_VERBOSE", "PS3_VFS_ROOT"]);
 
         st.window_size = "1920x1080".into();
         st.window_mode = "fullscreen".into();

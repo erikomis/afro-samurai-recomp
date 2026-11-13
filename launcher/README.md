@@ -109,8 +109,12 @@ executable is searched for the variable's name) says to rebuild instead.
   the table: what drives the game (`PS3_INPUT_MODE=controller|keyboard`),
   the mouse camera (off in this port; `PS3_MOUSE`, `_SENS`, `_INVERT_Y`,
   `_INVERT_X`, `_DEADZONE`, `_CAPTURE`; the mouse buttons count only while
-  it is on) and controller vibration (`PS3_RUMBLE=0`,
-  `PS3_RUMBLE_STRENGTH`).
+  it is on), controller vibration (`PS3_RUMBLE=0`,
+  `PS3_RUMBLE_STRENGTH`) and the **DualSense**: the adaptive triggers'
+  resistance (`PS3_PAD_ADAPTIVE`, 0 = free), the light bar (`PS3_PAD_LIGHT`,
+  the port's gold by default; off = the controller's own colour) with its
+  red glow on hits (`PS3_PAD_LIGHT_HIT=0`), and the gyro on the camera
+  (`PS3_PAD_GYRO`, off by default; `_MODE`, `_INVERT_Y`).
 - **Advanced / Avançado**, five tabs:
   - **Install / rebuild**: 1. the requirements (the Command Line Tools,
     Homebrew and its build tools, with **Install the build tools**; the disc,

@@ -161,6 +161,7 @@ label.opt { cursor: pointer; }
 .opt.sub { padding-left: 26px; position: relative; }
 .opt.sub::before { content: ""; position: absolute; left: 10px; top: 0; bottom: 50%; width: 8px; border-left: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); border-bottom-left-radius: 4px; }
 .opt:has(input:disabled), .opt:has(select:disabled) { opacity: 0.45; }
+.opt input[type="color"] { width: 54px; height: 30px; padding: 2px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--panel-2); cursor: pointer; flex: none; }
 .opt.compact { padding: 9px 0; border-bottom: 1px solid var(--line); }
 .opt.compact:hover { background: none; }
 .opt.compact select { min-width: 110px; width: auto; flex: 0 1 170px; }
