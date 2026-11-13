@@ -396,6 +396,7 @@ dividir os saves com o `tools/run.sh`. Detalhes em
 | `PS3_AA`, `PS3_SHARPEN`, `PS3_ANISO`, `PS3_VIBRANCE`, `PS3_CONTRAST`, `PS3_VIGNETTE`, `PS3_GRAIN`, `PS3_LUT` | o passe final: FXAA/SMAA, nitidez, filtragem anisotrópica, filtros de cor, um LUT no layout do ReShade |
 | `PS3_AUDIO_VOLUME=0..100`, `PS3_AUDIO_MUTE=1`, `PS3_AUDIO_DEVICE=<nome>` | volume geral, mudo, o dispositivo de saída |
 | `PS3_INPUT_MAP=<input.toml>`, `PS3_INPUT_MODE`, `PS3_MOUSE*`, `PS3_RUMBLE*` | o arquivo de controles (`run.sh`: `port/input.toml`, o layout deste port), só teclado ou só controle, a câmera no mouse, vibração |
+| `PS3_PAD_ADAPTIVE=<0-8>`, `PS3_PAD_LIGHT=<RRGGBB>\|off`, `PS3_PAD_LIGHT_HIT=0`, `PS3_PAD_GYRO=<0-400>` (`_MODE=always\|l1\|l2`, `_INVERT_Y=1`), `PS3_PAD_SDL=0` | DualSense: a resistência dos gatilhos (3; o gatilho segurado treme junto com a vibração), a cor da barra de luz (`run.sh`: dourado) e o brilho vermelho nos golpes, o giroscópio somado ao analógico da câmera (desligado); `PS3_PAD_SDL=0` ignora os controles físicos |
 | `PS3_APP_ICON=<png>` | o ícone da janela do jogo no Dock (o launcher passa um desenhado do `ICON0.PNG` do seu disco) |
 | `SPURS_LFQ_NOWAKE=1` | desliga a correção de despertar da fila LF (para comparação) |
 | `SPURS_JG_WAIT_FOREVER=0` | o percorredor da cadeia de jobs volta a desistir de um guard fechado depois de 20 s (a cadeia de skinning morre antes do New Game) |

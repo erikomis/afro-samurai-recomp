@@ -381,6 +381,7 @@ saves with `tools/run.sh`. Details in [`launcher/README.md`](launcher/README.md)
 | `PS3_AA`, `PS3_SHARPEN`, `PS3_ANISO`, `PS3_VIBRANCE`, `PS3_CONTRAST`, `PS3_VIGNETTE`, `PS3_GRAIN`, `PS3_LUT` | the present pass: FXAA/SMAA, sharpening, anisotropic filtering, colour filters, a ReShade-layout LUT |
 | `PS3_AUDIO_VOLUME=0..100`, `PS3_AUDIO_MUTE=1`, `PS3_AUDIO_DEVICE=<name>` | master volume, mute, the output device |
 | `PS3_INPUT_MAP=<input.toml>`, `PS3_INPUT_MODE`, `PS3_MOUSE*`, `PS3_RUMBLE*` | the controls file (`run.sh`: `port/input.toml`, this port's layout), keyboard or controller only, the mouse camera, rumble |
+| `PS3_PAD_ADAPTIVE=<0-8>`, `PS3_PAD_LIGHT=<RRGGBB>\|off`, `PS3_PAD_LIGHT_HIT=0`, `PS3_PAD_GYRO=<0-400>` (`_MODE=always\|l1\|l2`, `_INVERT_Y=1`), `PS3_PAD_SDL=0` | DualSense: the triggers' resistance (3; a held trigger buzzes with the rumble), the light bar's colour (`run.sh`: gold) and its red glow on hits, the gyro added to the camera stick (off); `PS3_PAD_SDL=0` ignores physical controllers |
 | `PS3_APP_ICON=<png>` | the game window's Dock icon (the launcher passes one drawn from your disc's `ICON0.PNG`) |
 | `SPURS_LFQ_NOWAKE=1` | turns off the LF-queue wake fix (for comparison) |
 | `SPURS_JG_WAIT_FOREVER=0` | the job-chain walker gives up on a closed guard after 20 s again (the skinning chain dies before New Game) |

@@ -285,7 +285,17 @@ bug do port e bug do jogo original são coisas diferentes.
   vibração.
 - [ ] Testar jogando: 2x e 3x, sem bordas e uma segunda tela, a câmera no
   mouse, teclas remapeadas, a intensidade da vibração, o volume de ouvido.
-- [ ] Pacotes de textura (`PS3_MODS_DIR`), a única opção que ainda falta.
+- [x] DualSense (2026-11-13), dos ports de Resistance e inFAMOUS: gatilhos
+  adaptativos (uma resistência leve, o gatilho segurado treme junto com a
+  vibração; o ponto de acionamento não muda), a barra de luz no dourado do
+  port brilhando em vermelho nos golpes, a luz do jogador, o giroscópio no
+  analógico da câmera, e `PS3_PAD_SDL=0`. Conferido com um controle falso
+  (`test_pad_dualsense.c`); ainda não sentido num DualSense de verdade.
+- [ ] Ainda a trazer dos outros ports, nesta ordem: o menu dentro do jogo e
+  o HUD (`PS3_OVERLAY`), a geração de quadros (`PS3_FRAMEGEN`), mods e
+  pacotes de textura (`PS3_MODS_DIR`), compilação de shaders em segundo
+  plano, os controles de tom, telas largas, ícones dos botões,
+  supersampling, a saída limpa.
 - [ ] Atualização do app no lugar, assinada (precisa de uma chave do updater;
   `launcher/README.md`).
 

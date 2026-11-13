@@ -268,7 +268,16 @@ a port bug and a bug of the original game are different things.
   rumble.
 - [ ] Play-test them by hand: 2x and 3x, borderless and a second screen, the
   mouse camera, remapped keys, rumble strength, the volume by ear.
-- [ ] Texture packs (`PS3_MODS_DIR`), the one option still missing.
+- [x] DualSense (2026-11-13), from the Resistance and inFAMOUS ports:
+  adaptive triggers (a light resistance, a held trigger buzzes with the
+  rumble; the press point does not move), the light bar in the port's gold
+  glowing red on hits, the player light, the gyro on the camera stick, and
+  `PS3_PAD_SDL=0`. Checked against a fake controller
+  (`test_pad_dualsense.c`); not yet felt on a real DualSense.
+- [ ] Still to bring from the other ports, in this order: the in-game menu
+  and HUD (`PS3_OVERLAY`), frame generation (`PS3_FRAMEGEN`), mods and
+  texture packs (`PS3_MODS_DIR`), background shader compilation, the tone
+  controls, wide screens, button icons, supersampling, the clean exit.
 - [ ] Signed in-place app updates (needs an updater key; `launcher/README.md`).
 
 ### Other platforms
