@@ -289,6 +289,16 @@ static DWORD WINAPI frame_clock(LPVOID)
     unsigned long long vblank_us = 16683;
     { const char* e = getenv("PS3_VBLANK_US"); if (e && atoi(e) > 0) vblank_us = (unsigned)atoi(e); }
     unsigned long long next_tick = mono_us(), last_pump = 0;
+    /* The flip request count at the last present, and when: a flip already
+     * presented through the pending flag must not be presented again when
+     * its count is noticed (each guest frame used to go out twice: 55-60
+     * presents a second for a 30 fps game, the second one after the drain
+     * had moved on). */
+    unsigned last_fc = 0;
+    unsigned long long last_fc_present = 0;
+    /* AFRO_PRESENT_TWICE=1: the old behaviour, for comparison. */
+    int present_twice = 0;
+    { const char* e = getenv("AFRO_PRESENT_TWICE"); present_twice = e && e[0] == '1'; }
 
     for (;;) {
         frame_clock_wait(clock_us);
@@ -304,8 +314,10 @@ static DWORD WINAPI frame_clock(LPVOID)
              * batch held right now is exactly the completed frame; presenting
              * after the drain races the guest's next-frame writes and shows a
              * mixed one. */
-            if (rsx_ok && cellGcm_take_flip_pending())
+            if (rsx_ok && cellGcm_take_flip_pending()) {
                 present_guest_frame();
+                if (!present_twice) { last_fc = cellGcm_flip_request_count(); last_fc_present = now; }
+            }
             /* Drain the FIFO every tick. This is what writes the RSX sync-fence
              * labels the game's per-frame logic blocks on, so it has to keep
              * advancing at 60 Hz even while present() throttles. */
@@ -320,8 +332,10 @@ static DWORD WINAPI frame_clock(LPVOID)
          * apiece paces the guest into single-figure frame rates. The real RSX writes
          * them in microseconds. */
         if (rsx_ok) {
-            if (cellGcm_take_flip_pending())
+            if (cellGcm_take_flip_pending()) {
                 present_guest_frame();
+                if (!present_twice) { last_fc = cellGcm_flip_request_count(); last_fc_present = now; }
+            }
             cellGcm_rsx_process_fifo();
 
             /* Window events at most every 4 ms: a windowed pump is a dispatch_sync to
@@ -349,8 +363,6 @@ static DWORD WINAPI frame_clock(LPVOID)
              * the flip without raising the pending flag, so with only the flag
              * this title flipped 600 times a second and nothing reached the
              * screen. At most one present per vblank, so the window paces. */
-            static unsigned last_fc = 0;
-            static unsigned long long last_fc_present = 0;
             const unsigned fc = cellGcm_flip_request_count();
             if (cellGcm_take_flip_pending()) {
                 present_guest_frame();
