@@ -355,8 +355,8 @@ const en = {
   "settings.audioVolume": "Volume",
   "settings.audioVolumeHint": "The game's master volume (PS3_AUDIO_VOLUME), on top of the computer's.",
   "settings.audioDevice": "Audio output",
-  "settings.audioDevicePlaceholder": "The system's default output",
-  "settings.audioDeviceHint": "Part of the output's name, e.g. AirPods or Speakers (PS3_AUDIO_DEVICE). With no match the game plays to the default output and lists the outputs in last.log.",
+  "settings.audioDeviceDefault": "The system's default output",
+  "settings.audioDeviceHint": "Where the game's sound goes (PS3_AUDIO_DEVICE): the outputs this Mac has now (speakers, headphones, AirPods, a TV, the DualSense). An output that is not connected when the game starts falls back to the default.",
 
   "tab.install": "Install / rebuild",
   "tab.log": "Game log",
@@ -941,8 +941,8 @@ const ptBR: Partial<Record<Key, string>> = {
   "settings.audioVolume": "Volume",
   "settings.audioVolumeHint": "O volume geral do jogo (PS3_AUDIO_VOLUME), somado ao do computador.",
   "settings.audioDevice": "Saída de áudio",
-  "settings.audioDevicePlaceholder": "A saída padrão do sistema",
-  "settings.audioDeviceHint": "Parte do nome da saída, p. ex. AirPods ou Alto-falantes (PS3_AUDIO_DEVICE). Sem correspondência o jogo toca na saída padrão e lista as saídas no last.log.",
+  "settings.audioDeviceDefault": "A saída padrão do sistema",
+  "settings.audioDeviceHint": "Para onde vai o som do jogo (PS3_AUDIO_DEVICE): as saídas que este Mac tem agora (alto-falantes, fones, AirPods, uma TV, o DualSense). Uma saída que não estiver conectada quando o jogo abrir volta para a padrão.",
 
   "tab.install": "Instalar / recompilar",
   "tab.log": "Log do jogo",

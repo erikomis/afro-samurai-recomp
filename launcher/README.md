@@ -87,8 +87,8 @@ executable is searched for the variable's name) says to rebuild instead.
   `PS3RECOMP_FFMPEG_AVCODEC` / `_AVUTIL` paths, Homebrew's by default: the
   runtime dlopens them by name, which a GUI app's search path misses); audio:
   the volume (`PS3_AUDIO_VOLUME`, passed below 100), mute
-  (`PS3_AUDIO_MUTE=1`), the output device by a part of its name
-  (`PS3_AUDIO_DEVICE`) and the ITU stereo fold-down
+  (`PS3_AUDIO_MUTE=1`), the output device, picked from the
+  outputs the Mac has now (`PS3_AUDIO_DEVICE`) and the ITU stereo fold-down
   (`PS3_AUDIO_DOWNMIX=itu`); the play folder; the **saves manager** (below).
 - **Controls / Controles**: the bindings, one row per PS3 control and a
   column each for the keyboard, the mouse buttons and the controller: click
