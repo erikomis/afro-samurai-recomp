@@ -43,6 +43,8 @@ export interface Settings {
   mouseInvertX: boolean;
   mouseDeadzone: number;
   mouseCapture: boolean;
+  overlay: boolean;
+  overlayHud: boolean;
   rumble: boolean;
   rumbleStrength: number;
   padAdaptive: number;
@@ -481,6 +483,8 @@ function bindSettings() {
   bindCheck("mouse-invert-x", "mouseInvertX");
   bindCheck("mouse-capture", "mouseCapture");
   bindCheck("rumble-on", "rumble");
+  bindCheck("overlay-on", "overlay");
+  bindCheck("overlay-hud", "overlayHud");
   bindCheck("pad-light-on", "padLightOn");
   bindCheck("pad-light-hit", "padLightHit");
   bindCheck("pad-gyro-invert", "padGyroInvertY");
@@ -632,6 +636,8 @@ const DEFAULTS: Partial<Settings> = {
   mouseInvertX: false,
   mouseDeadzone: 30,
   mouseCapture: true,
+  overlay: true,
+  overlayHud: false,
   rumble: true,
   rumbleStrength: 100,
   padAdaptive: 3,
@@ -665,6 +671,7 @@ function syncDependent() {
   $<HTMLInputElement>("gamma").disabled = !settings.gammaOverride;
   for (const id of ["mouse-sens", "mouse-invert", "mouse-invert-x", "mouse-dz", "mouse-capture"]) $<HTMLInputElement>(id).disabled = !settings.mouse;
   $<HTMLInputElement>("rumble-strength").disabled = !settings.rumble;
+  $<HTMLInputElement>("overlay-hud").disabled = !settings.overlay;
   for (const id of ["pad-light", "pad-light-hit"]) $<HTMLInputElement>(id).disabled = !settings.padLightOn;
   for (const id of ["pad-gyro-mode", "pad-gyro-invert"]) $<HTMLInputElement>(id).disabled = !(settings.padGyro > 0);
   $<HTMLInputElement>("audio-volume").disabled = settings.audioMute;

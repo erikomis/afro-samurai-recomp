@@ -123,6 +123,10 @@ pub struct Settings {
     pub mouse_deadzone: u32,
     /// PS3_MOUSE_CAPTURE: a click captures the cursor (Esc/Cmd releases it).
     pub mouse_capture: bool,
+    /// The in-game menu (F1, Cmd+, or L3+R3): PS3_OVERLAY=0 when off;
+    /// PS3_OVERLAY_HUD=1 shows the performance panel from the start.
+    pub overlay: bool,
+    pub overlay_hud: bool,
     /// PS3_RUMBLE=0 when off; PS3_RUMBLE_STRENGTH in percent (0-200).
     pub rumble: bool,
     pub rumble_strength: u32,
@@ -215,6 +219,8 @@ impl Default for Settings {
             mouse_invert_x: false,
             mouse_deadzone: 30,
             mouse_capture: true,
+            overlay: true,
+            overlay_hud: false,
             rumble: true,
             rumble_strength: 100,
             pad_adaptive: 3,
@@ -1150,6 +1156,20 @@ fn launch_env(s: &Settings, vfs: &Path, play: &Path, icon: Option<&Path>, input:
     set("PS3_GAMEDATA_ROOT", s_(play));
     set("PS3_BOOT_PATH", "/dev_bdvd/PS3_GAME/USRDIR/EBOOT.BIN".into());
     set("PS3_TITLE", WINDOW_TITLE.into());
+    // The in-game menu: in the port's red and the launcher's language; what
+    // the player changes in it is kept beside launcher.json, and a binding
+    // changed there goes to the player's controls file (never the port's).
+    if s.overlay {
+        set("PS3_OVERLAY_ACCENT", OVERLAY_ACCENT.into());
+        set("PS3_OVERLAY_LANG", if s.ui_lang.starts_with("pt") { "pt" } else { "en" }.into());
+        set("PS3_OVERLAY_INI", s_(&data_root().join("overlay.ini")));
+        set("PS3_INPUT_MAP_SAVE", s_(&input_map_path()));
+        if s.overlay_hud {
+            set("PS3_OVERLAY_HUD", "1".into());
+        }
+    } else {
+        set("PS3_OVERLAY", "0".into());
+    }
     // FMOD may load its MP3 codec from /dev_flash: RPCS3's firmware tree,
     // read-only, when it is installed.
     let flash = rpcs3_dir().join("dev_flash");
@@ -1576,6 +1596,9 @@ async fn get_status(app: AppHandle, state: State<'_, AppState>) -> Result<Status
 /// a feature the settings drive. A build made before the feature landed lacks
 /// the name; the window then labels (or, for the optional game patches,
 /// hides) the setting rather than pass a variable nothing reads.
+/// The in-game menu's accent (PS3_OVERLAY_ACCENT): the port's blood red.
+const OVERLAY_ACCENT: &str = "C8102E";
+
 /// The light bar's colour until the player picks one: the port's gold.
 const PAD_LIGHT_DEFAULT: &str = "#d6aa46";
 
@@ -1596,6 +1619,7 @@ const FEATURE_MARKERS: &[&str] = &[
     "PS3_AUDIO_VOLUME",     // volume, mute and output device
     "PS3_INPUT_MAP",        // bindings, input mode, mouse camera, rumble
     "PS3_PAD_ADAPTIVE",     // DualSense triggers, light bar and gyro
+    "PS3_OVERLAY_INI",      // the in-game menu and HUD
     "PS3RECOMP_MSL_CACHE",  // the shader translation cache
     "SPURS_JC_JOBLIST_PAR", // the skinning jobs on four threads
     "PS3_QUIT_GRACE_MS",    // Stop and closing the window quit the game cleanly
@@ -3222,6 +3246,25 @@ mod tests {
             assert!(!e.contains_key(k), "{k}");
         }
         assert_eq!(pad_light_hex(" #d6aa46 "), Some("D6AA46".into()));
+
+        // the in-game menu: the launcher's language, the HUD, and off
+        let mut st = Settings::default();
+        st.video = false;
+        let e = env(&st);
+        assert_eq!(e["PS3_OVERLAY_LANG"], "pt");
+        assert_eq!(e["PS3_OVERLAY_ACCENT"], "C8102E");
+        assert!(e["PS3_OVERLAY_INI"].ends_with("overlay.ini") && e["PS3_INPUT_MAP_SAVE"].ends_with("input.toml"));
+        assert!(!e.contains_key("PS3_OVERLAY") && !e.contains_key("PS3_OVERLAY_HUD"));
+        st.ui_lang = "en".into();
+        st.overlay_hud = true;
+        let e = env(&st);
+        assert_eq!((e["PS3_OVERLAY_LANG"].as_str(), e["PS3_OVERLAY_HUD"].as_str()), ("en", "1"));
+        st.overlay = false;
+        let e = env(&st);
+        assert_eq!(e["PS3_OVERLAY"], "0");
+        for k in ["PS3_OVERLAY_INI", "PS3_OVERLAY_HUD", "PS3_OVERLAY_LANG", "PS3_INPUT_MAP_SAVE"] {
+            assert!(!e.contains_key(k), "{k}");
+        }
         assert_eq!(pad_light_hex("d6aa4"), None);
     }
 
@@ -3350,7 +3393,7 @@ mod tests {
             "PS3_RES_SCALE", "PS3_UPSCALE", "PS3_AA", "PS3_SHARPEN", "PS3_ANISO", "PS3_DISPLAY_GAMMA", "PS3_VIBRANCE", "PS3_CONTRAST",
             "PS3_VIGNETTE", "PS3_GRAIN", "PS3_LUT", "PS3_LUT_STRENGTH", "PS3_INPUT_MAP", "PS3_INPUT_MODE", "PAD_NO_KEYBOARD",
             "PS3_MOUSE_SENS", "PS3_MOUSE_INVERT_X", "PS3_MOUSE_INVERT_Y", "PS3_MOUSE_DEADZONE", "PS3_MOUSE_CAPTURE", "PS3_RUMBLE",
-            "PS3_RUMBLE_STRENGTH", "PS3_PAD_ADAPTIVE", "PS3_PAD_LIGHT_HIT", "PS3_PAD_GYRO", "PS3_PAD_GYRO_MODE",
+            "PS3_RUMBLE_STRENGTH", "PS3_OVERLAY", "PS3_OVERLAY_HUD", "PS3_PAD_ADAPTIVE", "PS3_PAD_LIGHT_HIT", "PS3_PAD_GYRO", "PS3_PAD_GYRO_MODE",
             "PS3_PAD_GYRO_INVERT_Y", "PS3_MUTE", "PS3_AUDIO_MUTE", "PS3_AUDIO_VOLUME", "PS3_AUDIO_DEVICE", "PS3_AUDIO_DOWNMIX",
             "PS3RECOMP_METAL_FPS", "PS3RECOMP_MSL_CACHE", "SPURS_JC_JOBLIST_PAR", "PS3_QOS", "PS3_FRAMECLOCK_US", "PS3_LANG",
             "PS3_APP_ICON",
@@ -3358,7 +3401,7 @@ mod tests {
             assert!(!e.contains_key(k), "{k} passed with the defaults");
         }
         let keys: Vec<&str> = e.keys().map(String::as_str).filter(|k| *k != "PS3_DEV_FLASH").collect(); // RPCS3's firmware, when installed
-        assert_eq!(keys, ["AUDIO_ELASTIC", "PS3RECOMP_FFMPEG", "PS3_BOOT_PATH", "PS3_GAMEDATA_ROOT", "PS3_HDD0_ROOT", "PS3_HDD1_ROOT", "PS3_MOUSE", "PS3_PAD_LIGHT", "PS3_TITLE", "PS3_VERBOSE", "PS3_VFS_ROOT"]);
+        assert_eq!(keys, ["AUDIO_ELASTIC", "PS3RECOMP_FFMPEG", "PS3_BOOT_PATH", "PS3_GAMEDATA_ROOT", "PS3_HDD0_ROOT", "PS3_HDD1_ROOT", "PS3_INPUT_MAP_SAVE", "PS3_MOUSE", "PS3_OVERLAY_ACCENT", "PS3_OVERLAY_INI", "PS3_OVERLAY_LANG", "PS3_PAD_LIGHT", "PS3_TITLE", "PS3_VERBOSE", "PS3_VFS_ROOT"]);
 
         st.window_size = "1920x1080".into();
         st.window_mode = "fullscreen".into();

@@ -75,7 +75,15 @@ executable is searched for the variable's name) says to rebuild instead.
   `PS3_LUT_STRENGTH`). The profiles: **Original (PS3)** is everything off,
   **Balanced** FXAA, 4× and 20% sharpening at the native resolution,
   **Quality** SMAA, 16×, 35% sharpening, internal resolution 1.5 and MetalFX.
-- **Performance / Desempenho**: the skinning jobs on four threads (on, as
+- **Performance / Desempenho**: the **in-game menu** (on; off passes
+  `PS3_OVERLAY=0`) and its performance panel from the start
+  (`PS3_OVERLAY_HUD=1`). With it on, Play passes the menu's accent
+  (`PS3_OVERLAY_ACCENT`, the port's red), the launcher's language
+  (`PS3_OVERLAY_LANG`), `PS3_OVERLAY_INI=<data>/overlay.ini` (what the
+  player changes in the menu; an option the launcher passes wins over it)
+  and `PS3_INPUT_MAP_SAVE=<data>/input.toml` (a binding changed in the menu
+  becomes the player's controls file, the one the Controls page edits).
+  Then the skinning jobs on four threads (on, as
   `port/main.cpp` sets it; off passes `SPURS_JC_JOBLIST_PAR=0`), high
   priority for the game's threads (on; off passes `PS3_QOS=0`), the shader
   translation cache (`PS3RECOMP_MSL_CACHE=<data>/shader-cache`, on, with its
