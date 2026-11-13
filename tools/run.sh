@@ -43,8 +43,22 @@ mkdir -p "$PS3RECOMP_MSL_CACHE"
 [ -d "$HOME/Library/Application Support/rpcs3/dev_flash" ] && \
     export PS3_DEV_FLASH="${PS3_DEV_FLASH:-$HOME/Library/Application Support/rpcs3/dev_flash}"
 export PS3_TITLE=${PS3_TITLE:-"Afro Samurai"}
-# The controls: the port's own layout (port/input.toml) unless another file is given.
-export PS3_INPUT_MAP=${PS3_INPUT_MAP:-$AFRO_ROOT/port/input.toml}
+# The in-game menu (F1, Cmd+, or L3+R3) in the port's red. In a window it
+# keeps what the player changes in rpcs3/overlay.ini and the bindings it
+# rebinds in rpcs3/input.toml, beside this checkout's saves; a headless run
+# reads and writes neither, so a test always starts from the defaults.
+export PS3_OVERLAY_ACCENT=${PS3_OVERLAY_ACCENT:-C8102E}
+headless=${PS3RECOMP_METAL_HEADLESS:-}
+for a in "$@"; do [ "$a" = "PS3RECOMP_METAL_HEADLESS=1" ] && headless=1; done
+own_map=
+if [ "$headless" != 1 ]; then
+    export PS3_OVERLAY_INI=${PS3_OVERLAY_INI:-$AFRO_ROOT/rpcs3/overlay.ini}
+    export PS3_INPUT_MAP_SAVE=${PS3_INPUT_MAP_SAVE:-$AFRO_ROOT/rpcs3/input.toml}
+    [ -f "$PS3_INPUT_MAP_SAVE" ] && own_map=$PS3_INPUT_MAP_SAVE
+fi
+# The controls: what the menu saved, else the port's own layout
+# (port/input.toml), unless another file is given.
+export PS3_INPUT_MAP=${PS3_INPUT_MAP:-${own_map:-$AFRO_ROOT/port/input.toml}}
 # A DualSense's light bar in the port's gold (PS3_PAD_LIGHT=off: dark).
 export PS3_PAD_LIGHT=${PS3_PAD_LIGHT:-D6AA46}
 # A redirected stderr means verbose by default (runtime/ps3_log.h); keep it quiet

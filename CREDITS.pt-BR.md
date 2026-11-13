@@ -25,7 +25,9 @@ Este port só existe por causa do trabalho abaixo. Obrigado a todos.
 - [inFAMOUS 2](https://github.com/erikomis/infamous2-recomp),
   [Resistance: Fall of Man](https://github.com/erikomis/resistance-recomp) e
   PES 2013 — a organização do repositório, o `tools/build.sh` com as
-  proteções de memória e disco, e o formato do roadmap.
+  proteções de memória e disco, e o formato do roadmap. Os toolkits deles
+  também deram a este port o código do DualSense (gatilhos adaptativos,
+  barra de luz, giroscópio) e o menu dentro do jogo com o HUD.
 
 ## Ferramentas
 
@@ -36,6 +38,10 @@ Este port só existe por causa do trabalho abaixo. Obrigado a todos.
   dele foi lido, não copiado, para o `tools/decrypt_self.py`.
 - [sp00nznet/twistedmetal](https://github.com/sp00nznet/twistedmetal) — o
   `tools/decrypt_self.py` (MIT), base do descriptografador deste port.
+- [Dear ImGui](https://github.com/ocornut/imgui) v1.92.9b — Omar Cornut e
+  colaboradores, MIT. O menu dentro do jogo e o HUD são desenhados com ele;
+  o núcleo e o renderizador Metal vão no patch do toolkit
+  (`third_party/imgui`, sem modificações, com a licença).
 - [PS3 Developer Wiki](https://www.psdevwiki.com/ps3/) — a documentação de
   SELF, GCM e SPURS.
 - [SDL2](https://www.libsdl.org/), [glslang](https://github.com/KhronosGroup/glslang),

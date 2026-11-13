@@ -274,10 +274,19 @@ a port bug and a bug of the original game are different things.
   glowing red on hits, the player light, the gyro on the camera stick, and
   `PS3_PAD_SDL=0`. Checked against a fake controller
   (`test_pad_dualsense.c`); not yet felt on a real DualSense.
-- [ ] Still to bring from the other ports, in this order: the in-game menu
-  and HUD (`PS3_OVERLAY`), frame generation (`PS3_FRAMEGEN`), mods and
-  texture packs (`PS3_MODS_DIR`), background shader compilation, the tone
-  controls, wide screens, button icons, supersampling, the clean exit.
+- [x] The in-game menu and HUD (2026-11-13), from the Resistance port
+  (Dear ImGui): F1, Cmd+, or L3+R3; picture, sound, controls with
+  rebinding, performance, Quit. The picture filters, AA, MetalFX, vsync,
+  the window's mode, volume, rumble, the mouse camera and the bindings
+  change while the game runs; the menu keeps them in `PS3_OVERLAY_INI`.
+  Checked with its scripted test headless (every tab, the HUD, a filter and
+  the volume set live, the saved file, Quit ending with status 0) and in a
+  window (MetalFX on, borderless and back, vsync off). Not yet driven by
+  hand with the keyboard, the mouse or a controller.
+- [ ] Still to bring from the other ports, in this order: frame generation
+  (`PS3_FRAMEGEN`), mods and texture packs (`PS3_MODS_DIR`), background
+  shader compilation, the tone controls, wide screens, button icons,
+  supersampling. (The clean exit was already here: `PS3_QUIT_GRACE_MS`.)
 - [ ] Signed in-place app updates (needs an updater key; `launcher/README.md`).
 
 ### Other platforms

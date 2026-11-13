@@ -291,11 +291,20 @@ bug do port e bug do jogo original são coisas diferentes.
   port brilhando em vermelho nos golpes, a luz do jogador, o giroscópio no
   analógico da câmera, e `PS3_PAD_SDL=0`. Conferido com um controle falso
   (`test_pad_dualsense.c`); ainda não sentido num DualSense de verdade.
-- [ ] Ainda a trazer dos outros ports, nesta ordem: o menu dentro do jogo e
-  o HUD (`PS3_OVERLAY`), a geração de quadros (`PS3_FRAMEGEN`), mods e
-  pacotes de textura (`PS3_MODS_DIR`), compilação de shaders em segundo
-  plano, os controles de tom, telas largas, ícones dos botões,
-  supersampling, a saída limpa.
+- [x] O menu dentro do jogo e o HUD (2026-11-13), do port de Resistance
+  (Dear ImGui): F1, Cmd+, ou L3+R3; imagem, som, controles com
+  remapeamento, desempenho, Sair. Os filtros de imagem, AA, MetalFX, vsync,
+  o modo da janela, volume, vibração, a câmera no mouse e os botões mudam
+  com o jogo rodando; o menu guarda isso em `PS3_OVERLAY_INI`. Conferido com
+  o teste roteirizado dele em headless (todas as abas, o HUD, um filtro e o
+  volume mudados ao vivo, o arquivo salvo, Sair terminando com status 0) e
+  numa janela (MetalFX ligado, sem bordas e de volta, vsync desligado).
+  Ainda não usado à mão com teclado, mouse ou controle.
+- [ ] Ainda a trazer dos outros ports, nesta ordem: a geração de quadros
+  (`PS3_FRAMEGEN`), mods e pacotes de textura (`PS3_MODS_DIR`), compilação
+  de shaders em segundo plano, os controles de tom, telas largas, ícones
+  dos botões, supersampling. (A saída limpa já estava aqui:
+  `PS3_QUIT_GRACE_MS`.)
 - [ ] Atualização do app no lugar, assinada (precisa de uma chave do updater;
   `launcher/README.md`).
 
