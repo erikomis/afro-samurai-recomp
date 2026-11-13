@@ -66,7 +66,8 @@ executable is searched for the variable's name) says to rebuild instead.
   screen (`PS3_DISPLAY`, the names from `NSScreen`), vsync (`PS3_VSYNC=0`
   when off), "Your disc's icon in the Dock" (and "Use as the app's Finder
   icon"); image quality: a profile, the internal resolution
-  (`PS3_RES_SCALE` 1.5, 2 or 3; experimental), MetalFX upscaling
+  (`PS3_RES_SCALE` 1.5, 2, 3 or 4; experimental; above the window's size the
+  runtime reduces each frame with a Lanczos filter, supersampling), MetalFX upscaling
   (`PS3_UPSCALE=metalfx`), FXAA or SMAA (`PS3_AA`), sharpening
   (`PS3_SHARPEN`), anisotropic filtering (`PS3_ANISO`), a gamma override
   (`PS3_DISPLAY_GAMMA`); filters: vibrance and contrast (`PS3_VIBRANCE`,
