@@ -41,6 +41,12 @@ and the tools of the author's other ports
 > their own legitimate copy. A fan project, not affiliated with Bandai Namco
 > Entertainment, Sony Interactive Entertainment or GONZO.
 
+## Project metadata
+
+Project metadata for directories and tools lives in [`.recomp.json`](.recomp.json),
+following the [recomp.board specification](https://recomp.fyi/spec). Keep it
+updated when the project status, supported game version or target platforms change.
+
 ## Status
 
 As of 2026-11-07: boot → heaps and static constructors → SPURS and the

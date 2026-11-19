@@ -41,6 +41,12 @@ organização e as ferramentas dos outros ports do mesmo autor
 > da própria cópia legítima. Projeto de fã, sem afiliação com a Bandai Namco
 > Entertainment, a Sony Interactive Entertainment ou a GONZO.
 
+## Metadados do projeto
+
+Os metadados do projeto para catálogos e ferramentas ficam em [`.recomp.json`](.recomp.json),
+conforme a [especificação do recomp.board](https://recomp.fyi/spec). Mantenha o arquivo
+atualizado quando mudar o estado do projeto, a versão do jogo suportada ou as plataformas de destino.
+
 ## Estado
 
 Em 07/11/2026: boot → heaps e construtores estáticos → SPURS e as threads do

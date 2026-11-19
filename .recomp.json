@@ -1,0 +1,16 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "Afro Samurai",
+  "system": "PS3",
+  "type": "recomp",
+  "original": {
+    "serial": "BLUS30264",
+    "revision": "01.00"
+  },
+  "status": "in-progress",
+  "targets": [
+    "macOS"
+  ],
+  "toolchain": "ps3recomp",
+  "notes": "Source-only work in progress for Apple silicon Macs. The opening cutscene, combat tutorial and start of the first level have been played; the rest of the game is untested."
+}
